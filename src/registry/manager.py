@@ -236,29 +236,35 @@ class ProgramManager:
             if t.startswith(self.FRONTIER_PREFIX)
         ]
 
-    def update_config(self, config: ProgramConfig, message: str | None = None) -> None:
+    def commit(self, message: str | None = None) -> bool:
         """
-        Update the current program's configuration.
+        Commit any changes in the repo.
+
+        Only commits if there are actual changes. Safe to call anytime.
 
         Args:
-            config: New configuration to save
             message: Commit message (defaults to 'Update program: {name}')
-        """
-        self._write_config(config)
-        self._git_add(self.PROGRAM_FILE)
-        self._git_commit(message or f"Update program: {config.name}")
 
-    def save_skill_changes(self, message: str | None = None) -> None:
+        Returns:
+            True if a commit was made, False if nothing to commit
         """
-        Commit any changes to skills directory.
+        # Check if there are any changes
+        result = self._run_git(["status", "--porcelain"], check=False)
+        if not result.stdout.strip():
+            return False  # Nothing to commit
 
-        Args:
-            message: Commit message (defaults to 'Update skills')
-        """
-        skills_dir = self.cwd / ".claude" / "skills"
-        if skills_dir.exists():
-            self._git_add(".claude/skills/")
-            self._git_commit(message or "Update skills")
+        # Stage all changes
+        self._git_add(".")
+
+        # Get program name for default message
+        try:
+            config = self._read_config()
+            default_msg = f"Update program: {config.name}"
+        except Exception:
+            default_msg = "Update program"
+
+        self._git_commit(message or default_msg)
+        return True
 
     # -------------------------------------------------------------------------
     # Internal: Config I/O
