@@ -11,53 +11,137 @@ description: >
 
 # Quantitative Analysis Methodology Guide
 
-**CRITICAL: Verify methodology BEFORE computation. Wrong methodology = wrong answer regardless of correct data extraction.**
+---
 
-This guide consolidates:
-- Risk metric calculations (ES, VaR, volatility)
-- Time series forecasting (exponential smoothing, moving averages)
-- Currency conversion and date alignment
-- Federal budget classification
-- **Mandatory validation checkpoints**
+## ⚠️ MANDATORY FIRST OUTPUT — READ THIS BEFORE ANYTHING ELSE
+
+**You MUST output a validation block as your VERY FIRST action, BEFORE extracting any data or performing any calculation.**
+
+This is not optional. Skipping this step WILL result in wrong answers.
+
+### Required First Output Format
+
+**Immediately upon starting ANY quantitative task, output this block:**
+
+```
+═══════════════════════════════════════════════════════════
+METHODOLOGY VERIFICATION - [Task Type: ES/VaR/Forecasting/Currency]
+═══════════════════════════════════════════════════════════
+
+Check 1 - Data Form (for ES/VaR tasks):
+  Data form: Returns required.
+  Will compute returns from levels before calculation: [YES/NO]
+  Status: [PASS if YES / BLOCKED if NO]
+
+Check 2 - Date Alignment (for currency conversion tasks):
+  Price date: [exact date from source]
+  Exchange rate date: [exact date from rate source]
+  Match: [PASS if identical / BLOCKED if different]
+
+VERIFICATION RESULT: [PROCEED / BLOCKED - must resolve before continuing]
+═══════════════════════════════════════════════════════════
+```
+
+**You MUST output this validation block before any calculation. Skipping this step will result in wrong answers.**
 
 ---
 
-## Part 1: Pre-Computation Validation Protocol
+## ⚠️ BLOCKING CONDITIONS — DO NOT PROCEED IF THESE APPLY
 
-**This section enforces validation—rules exist below, but you must PROVE compliance before computing.**
+### BLOCKED: ES/VaR on Levels
 
-### Mandatory Validation Output Format
+**If you have yield/price LEVELS and will calculate ES/VaR directly on those levels, STOP.**
 
-**ALWAYS output this block before ANY multi-step financial calculation:**
+You MUST compute returns first. ES on levels is ALWAYS WRONG.
 
-```
-VALIDATION CHECKPOINT
-Task: [task type]
-Check 1: [description]
-  - Expected: [value]
-  - Found: [value]
-  - Status: [PASS/FAIL]
-Check 2: [description]
-  - Expected: [value]
-  - Found: [value]
-  - Status: [PASS/FAIL]
-OVERALL: [PASS - proceed / FAIL - halt and resolve]
-```
+- ❌ WRONG: Extract yields [9.56%, 8.36%, 7.37%, 6.14%], sort them, return min (6.14%) as ES
+- ✓ CORRECT: Extract yields, compute returns between periods, then calculate ES on returns
 
-### Blocking Behavior
+### BLOCKED: Date Misalignment
 
-**When validation FAILS:**
+**If price date is "end of March" and exchange rate date is "March 1", STOP.**
 
-1. Output: `VALIDATION FAILED: [specific reason]`
-2. Output: `REQUIRED ACTION: [what must be obtained/corrected]`
-3. **STOP** - Do not proceed with calculation
-4. Attempt to resolve (find correct data, correct transformation)
-5. Re-run validation checkpoint
-6. Only proceed when all checks PASS
+These are NOT the same date. Find end-of-March exchange rates or document why they're unavailable.
+
+- ❌ WRONG: Use March 1 exchange rate for end-of-March Treasury price
+- ✓ CORRECT: Use end-of-March exchange rate for end-of-March Treasury price
 
 ---
 
-## Part 2: Risk Metric Methodology
+## ⚠️ MOST COMMON ERRORS — CHECK BEFORE PROCEEDING
+
+| Error # | Wrong Approach | Why It's Wrong | Correct Approach |
+|---------|---------------|----------------|------------------|
+| 1 | Taking min(yield levels) as ES | ES requires RETURNS, not levels | Compute returns first, then ES on returns |
+| 2 | Using March 1 exchange rates for end-of-March prices | Dates must match exactly | Use end-of-March exchange rates |
+
+**If your approach matches either error pattern above, STOP and reconsider.**
+
+---
+
+## Validation Checkpoint Templates
+
+**Output the appropriate checkpoint BEFORE any multi-step financial calculation:**
+
+### For ES/VaR/Volatility Calculations
+
+```
+VALIDATION CHECKPOINT - Risk Calculation
+Check 1: Data Form
+  - Required form: returns
+  - Current form: [levels/returns]
+  - Status: [PASS if returns / BLOCKED if levels - must compute returns first]
+Check 2: Return Calculation (if transformed)
+  - Formula used: [e.g., (V_t - V_{t-1}) / V_{t-1}]
+  - Sample calculation: [show one example]
+  - Status: [PASS if verified / BLOCKED if not shown]
+Check 3: Output Sign Convention
+  - Loss representation: negative returns
+  - Status: [PASS if convention documented]
+OVERALL: [PASS - proceed / BLOCKED - halt and resolve]
+```
+
+### For Currency Conversion
+
+```
+VALIDATION CHECKPOINT - Currency Conversion
+Check 1: Date Alignment
+  - Price observation date: [exact date from source]
+  - Exchange rate date: [exact date from rate source]
+  - Status: [PASS if identical / BLOCKED if different]
+Check 2: Rate Direction
+  - Quote convention: [e.g., "DEM per USD" or "USD per DEM"]
+  - Operation to apply: [multiply/divide]
+  - Status: [PASS if verified / BLOCKED if uncertain]
+Check 3: Source Documentation
+  - Price source: [document/table/cell reference]
+  - Rate source: [document/API/reference]
+  - Status: [PASS if documented / BLOCKED if assumed]
+OVERALL: [PASS - proceed / BLOCKED - halt and resolve]
+```
+
+### For Forecasting
+
+```
+VALIDATION CHECKPOINT - Forecasting
+Check 1: Notation Parsing
+  - Raw value: [as appears in source]
+  - Parsed value: [decimal equivalent]
+  - Parsing method: [e.g., "32nds: 76 + 18/32 = 76.5625"]
+  - Status: [PASS if shown / BLOCKED if assumed]
+Check 2: Initialization Method
+  - Method: [e.g., "F_1 = Y_1 (first observation)"]
+  - Initial value: [numeric]
+  - Status: [PASS if explicit]
+Check 3: Error Convention
+  - Formula: Error = Actual - Forecast
+  - Status: [PASS if using standard convention]
+OVERALL: [PASS - proceed / BLOCKED - halt and resolve]
+```
+
+---
+
+## Part 1: Risk Metric Methodology
 
 ### Pre-Flight Checklist
 
@@ -89,14 +173,9 @@ At alpha = 5%, ES is the average of the worst 5% of returns.
 1. Extract yield levels: [9.56%, 9.60%, 8.36%, 7.37%, 7.68%, 6.69%, 5.87%, 6.04%, 5.65%, 6.14%]
 2. Compute period-over-period returns: [(9.60-9.56)/9.56, (8.36-9.60)/9.60, ...]
 3. Sort returns, take worst alpha percentile
-4. Average those worst returns - ES
+4. Average those worst returns → ES
 
 **Common error:** Taking min/max of raw levels. This is NOT ES.
-
-**Output validation:**
-- ES representing losses should be negative (e.g., -18.51%)
-- Magnitude should reflect plausible return movements
-- If ES equals min(raw_values), methodology was wrong
 
 ### Value at Risk (VaR)
 
@@ -108,29 +187,9 @@ VaR_alpha = quantile(returns, alpha)
 
 At 95% confidence, VaR is the 5th percentile of returns.
 
-### Risk Calculation Validation Checkpoint
-
-**Before ES, VaR, or volatility calculations:**
-
-```
-VALIDATION CHECKPOINT - Risk Calculation
-Check 1: Data Form
-  - Required form: returns
-  - Current form: [levels/returns]
-  - Status: [PASS if returns / FAIL if levels]
-Check 2: Return Calculation (if transformed)
-  - Formula used: [e.g., (V_t - V_{t-1}) / V_{t-1}]
-  - Sample calculation: [show one example]
-  - Status: [PASS if verified / FAIL if not shown]
-Check 3: Output Sign Convention
-  - Loss representation: negative returns
-  - Status: [PASS if convention documented]
-OVERALL: [PASS/FAIL]
-```
-
 ---
 
-## Part 3: Forecasting Methodology
+## Part 2: Forecasting Methodology
 
 ### Bond Price Notation Parsing
 
@@ -206,30 +265,9 @@ e_t = Y_t - F_t
 
 **WRONG:** e_t = F_t - Y_t (reverses sign interpretation)
 
-### Forecasting Validation Checkpoint
-
-**Before exponential smoothing or time-series forecasts:**
-
-```
-VALIDATION CHECKPOINT - Forecasting
-Check 1: Notation Parsing
-  - Raw value: [as appears in source]
-  - Parsed value: [decimal equivalent]
-  - Parsing method: [e.g., "32nds: 76 + 18/32 = 76.5625"]
-  - Status: [PASS if shown / FAIL if assumed]
-Check 2: Initialization Method
-  - Method: [e.g., "F_1 = Y_1 (first observation)"]
-  - Initial value: [numeric]
-  - Status: [PASS if explicit]
-Check 3: Error Convention
-  - Formula: Error = Actual - Forecast
-  - Status: [PASS if using standard convention]
-OVERALL: [PASS/FAIL]
-```
-
 ---
 
-## Part 4: Currency Conversion
+## Part 3: Currency Conversion
 
 ### Date Alignment Rule
 
@@ -257,36 +295,15 @@ For end-of-month price data:
 | DEM per USD | 1.85 DEM/USD | Multiply: USD * 1.85 |
 | USD per DEM | 0.54 USD/DEM | Divide: USD / 0.54 |
 
-### Currency Conversion Validation Checkpoint
-
-**Before EACH conversion, validate:**
-
-```
-VALIDATION CHECKPOINT - Currency Conversion
-Check 1: Date Alignment
-  - Price observation date: [exact date from source]
-  - Exchange rate date: [exact date from rate source]
-  - Status: [PASS if identical / FAIL if different]
-Check 2: Rate Direction
-  - Quote convention: [e.g., "DEM per USD" or "USD per DEM"]
-  - Operation to apply: [multiply/divide]
-  - Status: [PASS if verified / FAIL if uncertain]
-Check 3: Source Documentation
-  - Price source: [document/table/cell reference]
-  - Rate source: [document/API/reference]
-  - Status: [PASS if documented / FAIL if assumed]
-OVERALL: [PASS/FAIL]
-```
-
 **CRITICAL Date Alignment Rules:**
 - "End of March" prices require "end of March" exchange rates
-- "March 1" != "end of March" -> FAIL
-- "April 1" != "end of March" -> FAIL
+- "March 1" != "end of March" → BLOCKED
+- "April 1" != "end of March" → BLOCKED
 - Treasury Bulletin April edition contains END OF MARCH data
 
 ---
 
-## Part 5: Government Accounting Classifications
+## Part 4: Government Accounting Classifications
 
 **CRITICAL: Use OMB/Treasury definitions, not intuitive interpretation.**
 
@@ -296,7 +313,7 @@ Key principle: "Service-related" in federal accounting has specific regulatory m
 
 ---
 
-## Part 6: Data Transformation Rules
+## Part 5: Data Transformation Rules
 
 ### When to Compute Returns
 
@@ -325,7 +342,7 @@ Use simple returns unless log returns are specifically required.
 
 ---
 
-## Part 7: Multi-Source Data Combination
+## Part 6: Multi-Source Data Combination
 
 **Before combining time series from different sources:**
 
@@ -334,24 +351,40 @@ VALIDATION CHECKPOINT - Data Combination
 Check 1: Frequency Match
   - Source A frequency: [monthly/quarterly/etc.]
   - Source B frequency: [monthly/quarterly/etc.]
-  - Status: [PASS if identical / FAIL if different]
+  - Status: [PASS if identical / BLOCKED if different]
 Check 2: Date Convention Match
   - Source A dates: [e.g., "end of month"]
   - Source B dates: [e.g., "end of month"]
-  - Status: [PASS if identical / FAIL if different]
+  - Status: [PASS if identical / BLOCKED if different]
 Check 3: Period Alignment
   - Sample period: [e.g., "March 1972"]
   - Source A date: [exact date]
   - Source B date: [exact date]
-  - Status: [PASS if aligned / FAIL if misaligned]
-OVERALL: [PASS/FAIL]
+  - Status: [PASS if aligned / BLOCKED if misaligned]
+OVERALL: [PASS - proceed / BLOCKED - halt and resolve]
 ```
 
 ---
 
-## Part 8: Validation Checks Summary
+## Part 7: Output Verification — BEFORE REPORTING RESULTS
 
-Before reporting any result, verify:
+### ES/VaR Output Check
+
+**If your ES value equals the minimum of your raw data values, you made the levels-vs-returns error. Go back and compute returns.**
+
+Example self-check:
+- Raw yield values: [9.56, 9.60, 8.36, 7.37, 7.68, 6.69, 5.87, 6.04, 5.65, 6.14]
+- Minimum raw value: 5.65
+- Your ES answer: 5.65 ← **WRONG** — this equals min(raw), indicating ES was computed on levels
+- Correct: Compute returns first, then ES on returns (will be a negative percentage)
+
+### Forecasting Output Check
+
+**If your forecast error is in the range of ±5 for DEM-converted bond prices, verify you used end-of-month exchange rates, not month-start rates.**
+
+Systematic ±5 error often indicates exchange rate date misalignment when converting USD Treasury prices to DEM.
+
+### Quick Verification Table
 
 | Metric | Expected Characteristics | Red Flag |
 |--------|-------------------------|----------|
@@ -362,8 +395,6 @@ Before reporting any result, verify:
 | Forecast error sign | Negative if over-forecast | Sign seems reversed |
 | Currency conversion | Same order of magnitude | 10x or 0.1x original |
 | Date alignment | Exact date match | Off by days |
-| Percentage of total | Between 0% and 100% | Outside range or sum != 100% |
-| Classification ratio | Matches expected category scope | Drastically different from reasonable range |
 
 ---
 
@@ -371,26 +402,32 @@ Before reporting any result, verify:
 
 ```
 Starting a financial analysis task?
-|
-+-- Calculating ES, VaR, or volatility?
-|   +-- Is data already in return form?
-|       +-- YES -> Proceed with calculation
-|       +-- NO -> Compute returns first, then calculate
-|
-+-- Doing forecasting?
-|   +-- Is price data in 32nds notation?
-|   |   +-- YES -> Parse: Integer + Fractional/32
-|   |   +-- NO -> Use as-is (verify it's decimal)
-|   +-- Using exponential smoothing?
-|   |   +-- Initialize: F_1 = Y_1 (first observation)
-|   +-- Computing error?
-|       +-- Error = Actual - Forecast (signed)
-|
-+-- Converting currencies?
-|   +-- Match exchange rate date to price date exactly
-|   +-- Verify rate direction (per USD or per foreign)
-|   +-- Validate converted magnitude is reasonable
-|
-+-- Classification task?
-    +-- Check references/federal-accounting.md for definitions
+│
+├── OUTPUT MANDATORY VERIFICATION BLOCK FIRST
+│   └── If any check is BLOCKED → resolve before proceeding
+│
+├── Calculating ES, VaR, or volatility?
+│   ├── Is data already in return form?
+│   │   ├── YES → Proceed with calculation
+│   │   └── NO → Compute returns first, then calculate
+│   └── OUTPUT CHECK: Does ES equal min(raw_values)?
+│       └── YES → WRONG — go back and compute returns
+│
+├── Doing forecasting?
+│   ├── Is price data in 32nds notation?
+│   │   ├── YES → Parse: Integer + Fractional/32
+│   │   └── NO → Use as-is (verify it's decimal)
+│   ├── Using exponential smoothing?
+│   │   └── Initialize: F_1 = Y_1 (first observation)
+│   └── Computing error?
+│       └── Error = Actual - Forecast (signed)
+│
+├── Converting currencies?
+│   ├── Match exchange rate date to price date exactly
+│   │   └── "March 1" ≠ "end of March" → BLOCKED
+│   ├── Verify rate direction (per USD or per foreign)
+│   └── Validate converted magnitude is reasonable
+│
+└── Classification task?
+    └── Check references/federal-accounting.md for definitions
 ```
