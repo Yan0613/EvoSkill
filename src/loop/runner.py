@@ -1,6 +1,7 @@
 """Self-improving agent loop runner."""
 
 import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
@@ -157,6 +158,45 @@ class SelfImprovingLoop:
         # Iteration offset for continue mode
         self._iteration_offset = 0
 
+        # Checkpoint file for exact resume
+        self._checkpoint_path = self._project_root / ".claude" / "loop_checkpoint.json"
+
+    def _save_checkpoint(self, iteration: int) -> None:
+        """Save sampling state for exact resume.
+
+        Args:
+            iteration: The iteration number just completed.
+        """
+        checkpoint = {
+            "iteration": iteration,
+            "category_offset": self._category_offset,
+            "per_cat_offset": self._per_cat_offset,
+        }
+        self._checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        self._checkpoint_path.write_text(json.dumps(checkpoint, indent=2))
+
+    def _load_checkpoint(self) -> int | None:
+        """Load checkpoint if exists.
+
+        Returns:
+            Iteration number to resume from, or None if no checkpoint exists.
+        """
+        if not self._checkpoint_path.exists():
+            return None
+        try:
+            checkpoint = json.loads(self._checkpoint_path.read_text())
+            self._category_offset = checkpoint["category_offset"]
+            self._per_cat_offset = checkpoint["per_cat_offset"]
+            return checkpoint["iteration"]
+        except (json.JSONDecodeError, KeyError) as e:
+            _log("WARN", f"Invalid checkpoint file, ignoring: {e}")
+            return None
+
+    def _delete_checkpoint(self) -> None:
+        """Delete checkpoint file if it exists."""
+        if self._checkpoint_path.exists():
+            self._checkpoint_path.unlink()
+
     async def run(self) -> LoopResult:
         """Run the full self-improving loop.
 
@@ -164,15 +204,23 @@ class SelfImprovingLoop:
             LoopResult with frontier, best program, and iteration count.
         """
         # 0. Handle continue mode and feedback reset
+        resume_iteration: int | None = None
         if not self.config.continue_mode:
             # Start fresh: reset feedback if configured
             if self.config.reset_feedback and self._feedback_path.exists():
                 self._feedback_path.unlink()
             self._iteration_offset = 0
+            # Delete any existing checkpoint on fresh start
+            self._delete_checkpoint()
         else:
             # Continue mode: keep feedback, find highest iteration number
             self._iteration_offset = self._get_highest_iteration()
-            _log("CONTINUE", f"Resuming from iteration {self._iteration_offset}")
+            # Try to load checkpoint for exact sampling state resume
+            resume_iteration = self._load_checkpoint()
+            if resume_iteration is not None:
+                _log("CONTINUE", f"Resuming from iteration {resume_iteration} with exact sampling state")
+            else:
+                _log("CONTINUE", f"Resuming from iteration {self._iteration_offset} (no checkpoint, sampling state reset)")
 
         # Get sorted list of categories for deterministic round-robin
         categories = sorted(self.train_pools.keys())
@@ -194,6 +242,11 @@ class SelfImprovingLoop:
 
         for i in range(self.config.max_iterations):
             iteration_count = i + 1
+            actual_iteration = iteration_count + self._iteration_offset
+
+            # Skip already-completed iterations when resuming with checkpoint
+            if resume_iteration is not None and actual_iteration <= resume_iteration:
+                continue
 
             # Select best parent from frontier
             parent = self._get_best_parent()
@@ -258,7 +311,6 @@ class SelfImprovingLoop:
             )
 
             # Run proposer with all failures (use actual iteration number with offset)
-            actual_iteration = iteration_count + self._iteration_offset
             mutation_result = await self._mutate_with_fallback(parent, failures, actual_iteration)
 
             if mutation_result is None:
@@ -306,6 +358,9 @@ class SelfImprovingLoop:
             # Print frontier status
             frontier_str = ", ".join(f"{n}:{s:.2f}" for n, s in self.manager.get_frontier_with_scores())
             _log("", f"  Frontier: [{frontier_str}]")
+
+            # Save checkpoint at end of each successful iteration
+            self._save_checkpoint(actual_iteration)
 
         # 3. Return results
         frontier = self.manager.get_frontier_with_scores()

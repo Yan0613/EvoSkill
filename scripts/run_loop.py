@@ -10,6 +10,7 @@ from src.loop import SelfImprovingLoop, LoopConfig, LoopAgents
 from src.agent_profiles import (
     Agent,
     base_agent_options,
+    make_base_agent_options,
     skill_proposer_options,
     prompt_proposer_options,
     skill_generator_options,
@@ -147,6 +148,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override total validation count (optional, overrides val-ratio)",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["opus", "sonnet", "haiku"],
+        default=None,
+        help="Model for base agent (default: opus via SDK default)",
+    )
     return parser.parse_args()
 
 
@@ -166,8 +174,11 @@ async def main(args: argparse.Namespace):
     print(f"Validation samples: {len(val_data)} ({args.val_ratio:.0%} per category, min 1 each)")
     print(f"Split ratios: train={args.train_ratio:.0%}, val={args.val_ratio:.0%} (remaining {1-args.train_ratio-args.val_ratio:.0%} unused)")
 
+    # Use custom model for base agent if specified
+    base_options = make_base_agent_options(model=args.model) if args.model else base_agent_options
+
     agents = LoopAgents(
-        base=Agent(base_agent_options, AgentResponse),
+        base=Agent(base_options, AgentResponse),
         skill_proposer=Agent(skill_proposer_options, SkillProposerResponse),
         prompt_proposer=Agent(prompt_proposer_options, PromptProposerResponse),
         skill_generator=Agent(skill_generator_options, ToolGeneratorResponse),
@@ -188,7 +199,8 @@ async def main(args: argparse.Namespace):
         continue_mode=args.continue_loop,
     )
 
-    print(f"Running loop with evolution_mode={args.mode}")
+    model_info = f", model={args.model}" if args.model else ""
+    print(f"Running loop with evolution_mode={args.mode}{model_info}")
     loop = SelfImprovingLoop(config, agents, manager, train_pools, val_data)
     result = await loop.run()
 

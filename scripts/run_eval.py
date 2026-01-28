@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.agent_profiles import Agent, base_agent_options
+from src.agent_profiles import Agent, base_agent_options, make_base_agent_options
 from src.evaluation.eval_full import evaluate_full, load_results
 from src.schemas import AgentResponse
 
@@ -46,6 +46,14 @@ async def main():
         default=None,
         help="Limit to first N samples (default: all)",
     )
+    parser.add_argument(
+        "--model",
+        "-m",
+        type=str,
+        choices=["opus", "sonnet", "haiku"],
+        default=None,
+        help="Model for base agent (default: opus)",
+    )
     args = parser.parse_args()
 
     # Load dataset
@@ -71,7 +79,11 @@ async def main():
     items = [(i, row["question"], row["answer"]) for i, row in data.iterrows()]
 
     # Create agent and run
-    agent = Agent(base_agent_options, AgentResponse)
+    agent_options = make_base_agent_options(model=args.model) if args.model else base_agent_options
+    agent = Agent(agent_options, AgentResponse)
+
+    model_info = f" (model: {args.model})" if args.model else " (model: opus)"
+    print(f"Agent configured{model_info}")
 
     results = await evaluate_full(
         agent=agent,
