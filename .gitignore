@@ -6,7 +6,7 @@ dist/
 wheels/
 *.egg-info
 treasury_bulletins_parsed/
-
+*.skill
 # Claude Code config (ignore most, but track program state)
 .claude/*
 !.claude/program.yaml

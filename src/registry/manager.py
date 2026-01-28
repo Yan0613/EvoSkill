@@ -432,8 +432,12 @@ class ProgramManager:
         self._run_git(["add", path])
 
     def _git_commit(self, message: str) -> None:
-        """Create a commit."""
-        self._run_git(["commit", "-m", message])
+        """Create a commit if there are staged changes."""
+        # Check if there are staged changes
+        result = self._run_git(["diff", "--cached", "--quiet"], check=False)
+        if result.returncode != 0:
+            # There are staged changes, commit them
+            self._run_git(["commit", "-m", message])
 
     def _git_tag(self, tag: str) -> None:
         """Create a tag at current HEAD."""
