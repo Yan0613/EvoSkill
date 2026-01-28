@@ -53,3 +53,11 @@ class LoopConfig:
     cache_enabled: bool = True
     cache_dir: Path = field(default_factory=lambda: Path(".cache/runs"))
     cache_store_messages: bool = False
+
+    # Proposer resilience: adaptive truncation on context limit/timeout
+    proposer_max_truncation_level: int = 2  # Max truncation level (0=full, 1=moderate, 2=aggressive)
+    proposer_single_failure_fallback: bool = True  # Try single shortest failure if all levels fail
+    consecutive_proposer_failures_limit: int = 5  # Stop after N consecutive proposer failures
+
+    # Multi-sample per category: collect N samples per category before proposing
+    samples_per_category: int = 2  # Helps identify patterns within categories

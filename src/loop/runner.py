@@ -185,24 +185,29 @@ class SelfImprovingLoop:
             self.manager.switch_to(parent)
             _log(f"ITER {iteration_count}/{self.config.max_iterations}", f"Parent: {parent}")
 
-            # Round-robin sampling: pick 1 from each of N categories (cycling)
-            samples_per_iter = min(self.config.failure_sample_count, n_cats)
+            # Round-robin sampling: pick samples_per_category from each of N categories (cycling)
+            n_cats_this_iter = min(self.config.categories_per_batch, n_cats)
 
             test_samples: list[tuple[str, str, str]] = []
             sampled_cats: list[str] = []
-            for j in range(samples_per_iter):
+            for j in range(n_cats_this_iter):
                 cat_idx = (self._category_offset + j) % n_cats
                 cat = categories[cat_idx]
                 pool = self.train_pools[cat]
-                sample_idx = self._per_cat_offset[cat] % len(pool)
-                question, answer = pool[sample_idx]
-                test_samples.append((question, answer, cat))
-                sampled_cats.append(cat)
-                self._per_cat_offset[cat] += 1
 
-            self._category_offset += samples_per_iter
+                # Take min(samples_per_category, pool_size) to handle small categories
+                samples_to_take = min(self.config.samples_per_category, len(pool))
 
-            _log("", f"  Testing {samples_per_iter} samples from categories: {', '.join(sampled_cats)}...")
+                for _ in range(samples_to_take):
+                    sample_idx = self._per_cat_offset[cat] % len(pool)
+                    question, answer = pool[sample_idx]
+                    test_samples.append((question, answer, cat))
+                    sampled_cats.append(cat)
+                    self._per_cat_offset[cat] += 1
+
+            self._category_offset += n_cats_this_iter
+
+            _log("", f"  Testing {len(test_samples)} samples from categories: {', '.join(sampled_cats)}...")
 
             # Run all samples concurrently
             traces = await asyncio.gather(*[
@@ -239,7 +244,7 @@ class SelfImprovingLoop:
 
             # Run proposer with all failures (use actual iteration number with offset)
             actual_iteration = iteration_count + self._iteration_offset
-            mutation_result = await self._mutate(parent, failures, actual_iteration)
+            mutation_result = await self._mutate_with_fallback(parent, failures, actual_iteration)
 
             if mutation_result is None:
                 no_improvement_count += 1
@@ -361,6 +366,7 @@ class SelfImprovingLoop:
         parent: str,
         failures: list[tuple[AgentTrace[AgentResponse], str, str, str]],
         iteration: int,
+        truncation_level: int = 0,
     ) -> tuple[str, str, str] | None:
         """Run proposer and generator to create a mutation based on multiple failures.
 
@@ -368,6 +374,7 @@ class SelfImprovingLoop:
             parent: Name of the parent program.
             failures: List of (trace, agent_answer, ground_truth, category) tuples from failed attempts.
             iteration: Current iteration number.
+            truncation_level: Context reduction level (0=full, 1=moderate, 2=aggressive).
 
         Returns:
             Tuple of (child_name, proposal, justification) if created, None otherwise.
@@ -379,7 +386,7 @@ class SelfImprovingLoop:
         evolution_mode = self.config.evolution_mode
         _log("", f"  -> Running {evolution_mode.replace('_only', '')} proposer with {len(failures)} failures...")
         feedback_history = read_feedback_history(self._feedback_path)
-        proposer_query = build_proposer_query(failures, feedback_history, evolution_mode)
+        proposer_query = build_proposer_query(failures, feedback_history, evolution_mode, truncation_level)
 
         if evolution_mode == "skill_only":
             proposer_trace = await self.agents.skill_proposer.run(proposer_query)
@@ -457,6 +464,67 @@ and modify it to add these capabilities. Preserve all existing content that is s
 
         # Return mutation info (feedback will be written by caller with outcome)
         return (child_name, proposed, justification)
+
+    async def _mutate_with_fallback(
+        self,
+        parent: str,
+        failures: list[tuple[AgentTrace[AgentResponse], str, str, str]],
+        iteration: int,
+    ) -> tuple[str, str, str] | None:
+        """Try progressive truncation levels, then single-failure fallback.
+
+        Args:
+            parent: Name of the parent program.
+            failures: List of (trace, agent_answer, ground_truth, category) tuples.
+            iteration: Current iteration number.
+
+        Returns:
+            Tuple of (child_name, proposal, justification) if created, None otherwise.
+        """
+        max_level = self.config.proposer_max_truncation_level
+
+        for truncation_level in range(max_level + 1):
+            if truncation_level > 0:
+                _log("", f"  -> Retrying with truncation level {truncation_level}...")
+
+            result = await self._mutate(parent, failures, iteration, truncation_level)
+            if result is not None:
+                return result
+
+        # Final fallback: single failure focus (if enabled and multiple failures)
+        if self.config.proposer_single_failure_fallback and len(failures) > 1:
+            _log("", f"  -> All truncation levels failed, trying single-failure fallback...")
+            single_failure = self._pick_shortest_failure(failures)
+            result = await self._mutate(parent, [single_failure], iteration, truncation_level=max_level)
+            if result is not None:
+                return result
+
+        _log("", f"  [WARN] All proposer fallback attempts failed")
+        return None
+
+    def _pick_shortest_failure(
+        self,
+        failures: list[tuple[AgentTrace[AgentResponse], str, str, str]],
+    ) -> tuple[AgentTrace[AgentResponse], str, str, str]:
+        """Pick the failure with the shortest trace for fallback.
+
+        Args:
+            failures: List of (trace, agent_answer, ground_truth, category) tuples.
+
+        Returns:
+            The failure tuple with the shortest trace summary.
+        """
+        # Estimate trace length by summarizing with default params
+        shortest = failures[0]
+        shortest_len = len(shortest[0].summarize())
+
+        for failure in failures[1:]:
+            length = len(failure[0].summarize())
+            if length < shortest_len:
+                shortest = failure
+                shortest_len = length
+
+        return shortest
 
     def _get_best_parent(self) -> str:
         """Get best program from frontier, or 'base' if frontier is empty."""

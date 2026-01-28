@@ -12,6 +12,7 @@ def build_proposer_query(
     traces_with_answers: list[tuple["AgentTrace", str, str, str]],
     feedback_history: str,
     evolution_mode: str = "skill_only",
+    truncation_level: int = 0,
 ) -> str:
     """Build the query for the proposer agent from multiple failure traces.
 
@@ -19,10 +20,31 @@ def build_proposer_query(
         traces_with_answers: List of (trace, agent_answer, ground_truth, category) tuples.
         feedback_history: Previous feedback history.
         evolution_mode: "skill_only" or "prompt_only" - affects trace truncation.
+        truncation_level: Context reduction level (0=full, 1=moderate, 2=aggressive).
 
     Returns:
         Formatted query string for the proposer.
     """
+    # Truncation level settings: (head_chars, tail_chars, feedback_lines, max_failures)
+    TRUNCATION_SETTINGS = [
+        (60_000, 60_000, None, None),    # Level 0: full
+        (20_000, 10_000, 20, 3),         # Level 1: moderate
+        (5_000, 2_000, 5, 2),            # Level 2: aggressive
+    ]
+    head_chars, tail_chars, feedback_lines, max_failures = TRUNCATION_SETTINGS[
+        min(truncation_level, len(TRUNCATION_SETTINGS) - 1)
+    ]
+
+    # Apply max_failures limit
+    if max_failures is not None and len(traces_with_answers) > max_failures:
+        traces_with_answers = traces_with_answers[:max_failures]
+
+    # Apply feedback truncation
+    if feedback_lines is not None:
+        feedback_lines_list = feedback_history.split("\n")
+        if len(feedback_lines_list) > feedback_lines:
+            feedback_history = "\n".join(feedback_lines_list[-feedback_lines:])
+
     # Get existing skills for context
     skills_dir = Path(".claude/skills")
     existing_skills = []
@@ -36,15 +58,20 @@ def build_proposer_query(
     categories = [cat for _, _, _, cat in traces_with_answers]
     category_summary = ", ".join(sorted(set(categories)))
 
-    # Build failure summaries
+    # Build failure summaries with truncation-level-aware settings
     failure_sections = []
     for i, (trace, agent_answer, ground_truth, category) in enumerate(traces_with_answers, 1):
         # For prompt mode, use more aggressive truncation to focus on patterns
-        # For skill mode, keep full trace to see tool usage
+        # For skill mode, keep full trace to see tool usage (but respect truncation level)
         if evolution_mode == "prompt_only":
-            trace_summary = trace.summarize(head_chars=20_000, tail_chars=10_000)
+            # Prompt mode uses tighter truncation even at level 0
+            effective_head = min(head_chars, 20_000)
+            effective_tail = min(tail_chars, 10_000)
         else:
-            trace_summary = trace.summarize()
+            effective_head = head_chars
+            effective_tail = tail_chars
+
+        trace_summary = trace.summarize(head_chars=effective_head, tail_chars=effective_tail)
 
         failure_sections.append(f"""### Failure {i} [Category: {category}]
 {trace_summary}
