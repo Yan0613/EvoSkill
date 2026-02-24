@@ -42,6 +42,7 @@
 - [🧠 What is EvoSkill?](#-what-is-evoskill)
 - [🏗️ How It Works](#️-how-it-works)
 - [📦 Installation & Setup](#-installation--setup)
+- [🐍 Python API](#-python-api)
 - [⚡ Quickstart: Running the Self-Improvement Loop](#-quickstart-running-the-self-improvement-loop)
 - [📊 Running Evaluations](#-running-evaluations)
 - [🔑 Key Concepts](#-key-concepts)
@@ -96,7 +97,7 @@ pip install -e .
 ```
 
 **Environment variables:**
-
+Either login to **Claude Code** or use your API key
 ```bash
 # Required — used by the Claude agent SDK
 export ANTHROPIC_API_KEY=your-key-here
@@ -111,11 +112,92 @@ Place your benchmark datasets in the `.dataset/` directory:
 
 ---
 
+## 🐍 Python API
+
+EvoSkill provides a high-level Python API that reduces the boilerplate needed to run the self-improvement loop or standalone evaluations to just a few lines.
+
+### `EvoSkill` — Run the self-improvement loop
+
+```python
+from src.api import EvoSkill
+
+# Minimal — uses task defaults
+result = await EvoSkill(dataset=".dataset/seal-0.csv", task="sealqa").run()
+
+# Full configuration
+evo = EvoSkill(
+    task="sealqa",
+    model="sonnet",
+    mode="skill_only",
+    max_iterations=20,
+    frontier_size=3,
+    concurrency=4,
+    train_ratio=0.18,
+    val_ratio=0.12,
+    continue_mode=False,
+)
+result = await evo.run()
+
+# Synchronous usage (wraps asyncio.run)
+result = EvoSkill(task="base").run_sync()
+
+# Preview dataset splits without running
+print(evo.dataset_info)
+```
+
+### `EvalRunner` — Run standalone evaluation
+
+```python
+from src.api import EvalRunner
+
+summary = await EvalRunner(
+    task="sealqa",
+    model="sonnet",
+    max_concurrent=8,
+).run()
+
+print(f"Accuracy: {summary.accuracy:.1%} ({summary.correct}/{summary.successful})")
+```
+
+### Built-in tasks
+
+Three tasks are registered out of the box:
+
+| Task | Agent | Default Dataset | Scorer |
+|------|-------|-----------------|--------|
+| `"base"` | Base agent | `.dataset/new_runs_base/solved_dataset.csv` | Multi-tolerance (default) |
+| `"sealqa"` | SEAL-QA agent | `.dataset/seal-0.csv` | LLM-graded (GPT) |
+
+```python
+from src.api import list_tasks
+print(list_tasks())  # ['base', 'dabstep', 'sealqa']
+```
+
+### Registering a custom task
+
+```python
+from src.api import TaskConfig, register_task
+
+register_task(TaskConfig(
+    name="my_task",
+    make_agent_options=make_my_agent_options,
+    scorer=my_scorer_fn,  # (question, predicted, ground_truth) -> float
+    column_renames={"label": "ground_truth", "topic": "category"},
+    default_dataset=".dataset/my_data.csv",
+))
+
+result = await EvoSkill(task="my_task").run()
+```
+
+---
+
 ## ⚡ Quickstart: Running the Self-Improvement Loop
+
+The CLI scripts remain available for users who prefer the command line.
 
 Run the evolutionary skill discovery loop on a benchmark:
 
-**DABStep:**
+**OfficeQA:**
 
 ```bash
 python scripts/run_loop.py --mode skill_only --max-iterations 20
@@ -151,12 +233,6 @@ Evaluate an agent configuration on a full benchmark dataset:
 python scripts/run_eval.py --model opus --max-concurrent 8
 ```
 
-**DABStep:**
-
-```bash
-python scripts/run_eval_dabstep.py --model opus --max-concurrent 8
-```
-
 **SEAL-QA:**
 
 ```bash
@@ -180,9 +256,11 @@ Common eval flags: `--output <path>`, `--max-concurrent <n>`, `--num-samples <n>
 
 ## 🧩 Extending EvoSkill: Adding a New Task
 
-EvoSkill is designed to be extended to new benchmarks. To add your own task, follow these four steps:
+EvoSkill is designed to be extended to new benchmarks. There are two approaches: using the **Python API** (recommended) or creating **standalone scripts**.
 
-### 1. Create an Agent Profile
+### Option A: Using `register_task` (recommended)
+
+#### 1. Create an Agent Profile
 
 Add a new directory under `src/agent_profiles/` for your task:
 
@@ -197,27 +275,47 @@ Your agent module should expose a `make_*_agent_options` factory that returns `C
 
 Then register the exports in `src/agent_profiles/__init__.py`.
 
-### 2. Create a Scorer
+#### 2. Create a Scorer (optional)
 
 Add a scorer under `src/evaluation/` that compares the agent's output to ground truth:
 
 ```python
 # src/evaluation/my_task_scorer.py
 
-def score_my_task(predicted: str, ground_truth: str) -> bool:
-    """Return True if the answer is correct."""
-    return predicted.strip().lower() == ground_truth.strip().lower()
+def score_my_task(question: str, predicted: str, ground_truth: str) -> float:
+    """Return 1.0 if correct, 0.0 otherwise."""
+    return 1.0 if predicted.strip().lower() == ground_truth.strip().lower() else 0.0
 ```
 
-For more complex grading (e.g. partial credit or LLM-based judging), see `src/evaluation/sealqa_scorer.py`.
+For more complex grading (e.g. partial credit or LLM-based judging), see `src/evaluation/sealqa_scorer.py`. If no scorer is provided, the default multi-tolerance scorer is used.
 
-### 3. Create an Evaluation Script
-
-Add a script under `scripts/` that loads your dataset and runs `evaluate_full()`:
+#### 3. Register and run
 
 ```python
-# scripts/run_eval_my_task.py
+from src.api import TaskConfig, register_task, EvoSkill, EvalRunner
 
+register_task(TaskConfig(
+    name="my_task",
+    make_agent_options=make_my_task_agent_options,
+    scorer=score_my_task,
+    column_renames={"label": "ground_truth", "topic": "category"},
+    default_dataset=".dataset/my_data.csv",
+))
+
+# Run the self-improvement loop
+result = await EvoSkill(task="my_task").run()
+
+# Or run a standalone evaluation
+summary = await EvalRunner(task="my_task", model="sonnet").run()
+```
+
+### Option B: Standalone scripts
+
+You can also create scripts directly under `scripts/` following the existing patterns.
+
+**Evaluation script** — loads your dataset and runs `evaluate_full()`:
+
+```python
 from src.agent_profiles import Agent, make_my_task_agent_options
 from src.evaluation.eval_full import evaluate_full
 from src.schemas import AgentResponse
@@ -226,11 +324,9 @@ agent = Agent(make_my_task_agent_options(model="opus"), AgentResponse)
 results = await evaluate_full(agent=agent, items=items, output_path=output, ...)
 ```
 
-See `scripts/run_eval_dabstep.py` for a complete example with argparse, dataset loading, and result reporting.
+See `scripts/run_eval_dabstep.py` for a complete example.
 
-### 4. Create a Self-Improvement Loop Script (optional)
-
-To run automated skill discovery on your task, add a loop script under `scripts/` following the pattern in `scripts/run_loop.py`. The key ingredients are:
+**Loop script** — follow the pattern in `scripts/run_loop.py`. The key ingredients are:
 
 - A **dataset split** function (train set for failure analysis, validation set for scoring)
 - Your **agent options factory** and **scorer** wired into `SelfImprovingLoop`

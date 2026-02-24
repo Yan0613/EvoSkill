@@ -8,6 +8,7 @@ from .feedback_descent import (
     Proposer,
     Evaluator,
 )
+from .api import EvoSkill, EvalRunner, EvalSummary
 
 __all__ = [
     "FeedbackDescent",
@@ -16,4 +17,7 @@ __all__ = [
     "FeedbackDescentResult",
     "Proposer",
     "Evaluator",
+    "EvoSkill",
+    "EvalRunner",
+    "EvalSummary",
 ]
