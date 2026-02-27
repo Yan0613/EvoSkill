@@ -103,6 +103,18 @@ Either login to **Claude Code** or use your API key
 export ANTHROPIC_API_KEY=your-key-here
 ```
 
+**SDK and Model Selection:**
+
+Use `--sdk` and `--model` to configure which SDK and model to use:
+```bash
+# Claude SDK (default)
+uv run python scripts/run_eval.py --sdk claude --model claude-sonnet-4-5-20250514
+
+# OpenCode SDK with different models
+uv run python scripts/run_eval.py --sdk opencode --model deepseek-ai/DeepSeek-V3
+uv run python scripts/run_eval.py --sdk opencode --model google/gemini-2.0-flash-exp
+```
+
 **Dataset preparation:**
 
 Place your benchmark datasets in the `.dataset/` directory:
