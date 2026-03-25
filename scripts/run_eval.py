@@ -17,6 +17,7 @@ from src.agent_profiles import (
     base_agent_options,
     make_base_agent_options,
     set_sdk,
+    set_hf_config,
 )
 from src.evaluation.eval_full import evaluate_full, load_results
 from src.schemas import AgentResponse
@@ -48,14 +49,35 @@ class EvalSettings(BaseSettings):
         default=Path("~/officeqa/officeqa.csv").expanduser(),
         description="Path to OfficeQA dataset CSV",
     )
-    sdk: Literal["claude", "opencode"] = Field(
+    sdk: Literal["claude", "opencode", "huggingface"] = Field(
         default="claude",
-        description="SDK to use: 'claude' or 'opencode'",
+        description="SDK to use: 'claude', 'opencode', or 'huggingface'",
+    )
+    hf_model: str = Field(
+        default="Qwen/Qwen3-4B",
+        description="HuggingFace model name or local path (used when sdk=huggingface)",
+    )
+    hf_max_new_tokens: int = Field(
+        default=512,
+        description="Max new tokens for HuggingFace model generation",
+    )
+    hf_enable_thinking: bool = Field(
+        default=False,
+        description="Enable thinking mode for HuggingFace models that support it",
     )
 
 
 async def main(settings: EvalSettings):
     set_sdk(settings.sdk)
+    if settings.sdk == "huggingface":
+        set_hf_config(
+            model_name=settings.hf_model,
+            max_new_tokens=settings.hf_max_new_tokens,
+            enable_thinking=settings.hf_enable_thinking,
+        )
+        print(f"[SDK] HuggingFace backend: {settings.hf_model}")
+    else:
+        print(f"[SDK] {settings.sdk} backend, model: {settings.model}")
 
     # Load dataset
     data = pd.read_csv(settings.dataset_path)

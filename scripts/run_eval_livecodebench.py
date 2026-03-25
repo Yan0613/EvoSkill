@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.agent_profiles import Agent, make_livecodebench_agent_options, set_sdk
+from src.agent_profiles import Agent, make_livecodebench_agent_options, set_sdk, set_hf_config, set_vllm_config
 from src.evaluation.eval_full import evaluate_full, load_results
 from src.evaluation.livecodebench import (
     score_livecodebench,
@@ -76,14 +76,66 @@ async def main():
     parser.add_argument(
         "--sdk",
         type=str,
-        choices=["claude", "opencode"],
+        choices=["claude", "opencode", "huggingface", "vllm"],
         default="claude",
-        help="SDK to use: 'claude' or 'opencode' (default: claude)",
+        help="SDK to use: 'claude', 'opencode', 'huggingface', or 'vllm' (default: claude)",
+    )
+    parser.add_argument(
+        "--hf-model",
+        type=str,
+        default="Qwen/Qwen3-4B",
+        help="HuggingFace model name or local path (used when --sdk huggingface)",
+    )
+    parser.add_argument(
+        "--hf-max-new-tokens",
+        type=int,
+        default=512,
+        help="Max new tokens for HuggingFace model generation (default: 512)",
+    )
+    parser.add_argument(
+        "--vllm-base-url",
+        type=str,
+        default="http://localhost:8000/v1",
+        help="vLLM server base URL (used when --sdk vllm, default: http://localhost:8000/v1)",
+    )
+    parser.add_argument(
+        "--vllm-max-tokens",
+        type=int,
+        default=8192,
+        help="Max tokens for vLLM generation (default: 8192)",
+    )
+    parser.add_argument(
+        "--vllm-context-length",
+        type=int,
+        default=131072,
+        help="vLLM model context window size (default: 131072 for 128K models like Qwen2.5-72B)",
+    )
+    parser.add_argument(
+        "--hf-enable-thinking",
+        action="store_true",
+        help="Enable thinking mode for HuggingFace models that support it",
     )
     args = parser.parse_args()
 
     # Set SDK
     set_sdk(args.sdk)
+    if args.sdk == "huggingface":
+        set_hf_config(
+            model_name=args.hf_model,
+            max_new_tokens=args.hf_max_new_tokens,
+            enable_thinking=args.hf_enable_thinking,
+        )
+        print(f"[SDK] HuggingFace backend: {args.hf_model}")
+    elif args.sdk == "vllm":
+        set_vllm_config(
+            base_url=args.vllm_base_url,
+            model_name=args.model,
+            max_tokens=args.vllm_max_tokens,
+            context_length=args.vllm_context_length,
+        )
+        print(f"[SDK] vLLM backend: {args.vllm_base_url}, model: {args.model}, context: {args.vllm_context_length}, max_tokens: {args.vllm_max_tokens}")
+    else:
+        print(f"[SDK] {args.sdk} backend, model: {args.model}")
 
     # Ensure dataset is downloaded
     if args.dataset is None:
