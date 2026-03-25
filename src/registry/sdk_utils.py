@@ -6,9 +6,10 @@ and the Claude Agent SDK.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from claude_agent_sdk import ClaudeAgentOptions
+if TYPE_CHECKING:
+    from claude_agent_sdk import ClaudeAgentOptions
 
 from .models import ProgramConfig
 
@@ -19,7 +20,7 @@ def config_to_options(
     *,
     add_dirs: list[Any] | None = None,
     permission_mode: str = "acceptEdits",
-) -> ClaudeAgentOptions:
+):
     """
     Convert ProgramConfig to ClaudeAgentOptions.
 
@@ -32,6 +33,7 @@ def config_to_options(
     Returns:
         ClaudeAgentOptions ready for use with ClaudeSDKClient
     """
+    from claude_agent_sdk import ClaudeAgentOptions
     return ClaudeAgentOptions(
         system_prompt=config.system_prompt,
         allowed_tools=config.allowed_tools,
@@ -44,7 +46,7 @@ def config_to_options(
 
 
 def options_to_config(
-    options: ClaudeAgentOptions,
+    options: Any,
     name: str,
     *,
     parent: str | None = None,
