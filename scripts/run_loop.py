@@ -21,6 +21,8 @@ from src.agent_profiles import (
     skill_generator_options,
     prompt_generator_options,
     set_sdk,
+    set_hf_config,
+    set_vllm_config,
 )
 from src.agent_profiles.skill_generator import get_project_root
 from src.registry import ProgramManager
@@ -84,9 +86,37 @@ class LoopSettings(BaseSettings):
     model: Optional[str] = Field(
         default=None, description="Model for base agent (opus, sonnet, haiku)"
     )
-    sdk: Literal["claude", "opencode"] = Field(
+    sdk: Literal["claude", "opencode", "huggingface", "vllm"] = Field(
         default="claude",
-        description="SDK to use: 'claude' or 'opencode'",
+        description="SDK to use: 'claude', 'opencode', 'huggingface', or 'vllm'",
+    )
+    vllm_base_url: str = Field(
+        default="http://localhost:8000/v1",
+        description="vLLM server base URL (only used when sdk='vllm')",
+    )
+    vllm_max_tokens: int = Field(
+        default=8192,
+        description="Max tokens for vLLM generation (only used when sdk='vllm')",
+    )
+    vllm_context_length: int = Field(
+        default=131072,
+        description="vLLM model context window size (default: 131072 for 128K models like Qwen2.5-72B)",
+    )
+    hf_model: str = Field(
+        default="Qwen/Qwen3-4B",
+        description="HuggingFace model name (only used when sdk='huggingface')",
+    )
+    hf_max_new_tokens: int = Field(
+        default=512,
+        description="Max new tokens for HuggingFace model",
+    )
+    hf_device: str = Field(
+        default="auto",
+        description="Device for HuggingFace model (auto/cpu/cuda)",
+    )
+    hf_enable_thinking: bool = Field(
+        default=False,
+        description="Enable thinking mode for HuggingFace model",
     )
 
 
@@ -138,6 +168,20 @@ def stratified_split(
 async def main(settings: LoopSettings):
     # Set SDK based on CLI argument
     set_sdk(settings.sdk)
+    if settings.sdk == "huggingface":
+        set_hf_config(
+            model_name=settings.hf_model,
+            max_new_tokens=settings.hf_max_new_tokens,
+            device=settings.hf_device,
+            enable_thinking=settings.hf_enable_thinking,
+        )
+    elif settings.sdk == "vllm":
+        set_vllm_config(
+            base_url=settings.vllm_base_url,
+            model_name=settings.model or settings.hf_model,
+            max_tokens=settings.vllm_max_tokens,
+            context_length=settings.vllm_context_length,
+        )
 
     data = pd.read_csv(settings.dataset)
 
