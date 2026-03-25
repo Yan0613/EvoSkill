@@ -11,7 +11,7 @@ from .prompt_generator import prompt_generator_options
 from .skill_proposer import skill_proposer_options
 from .prompt_proposer import prompt_proposer_options
 from .base import Agent, AgentTrace
-from .sdk_config import set_sdk, get_sdk, is_claude_sdk, is_opencode_sdk
+from .sdk_config import set_sdk, get_sdk, is_claude_sdk, is_opencode_sdk, is_huggingface_sdk, is_vllm_sdk, set_hf_config, get_hf_config, set_vllm_config, get_vllm_config
 
 __all__ = [
     "proposer_options",
@@ -33,4 +33,10 @@ __all__ = [
     "get_sdk",
     "is_claude_sdk",
     "is_opencode_sdk",
+    "is_huggingface_sdk",
+    "is_vllm_sdk",
+    "set_hf_config",
+    "get_hf_config",
+    "set_vllm_config",
+    "get_vllm_config",
 ]
