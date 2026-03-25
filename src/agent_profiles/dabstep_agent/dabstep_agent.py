@@ -28,29 +28,21 @@ def get_dabstep_agent_options(model: str | None = None, data_dir: str | None = N
         # HuggingFace / vLLM path: return a plain dict with Python tool implementations
         from src.agent_profiles.sdk_config import is_vllm_sdk
         from src.agent_profiles.hf_tools import HF_TOOLS
-        # NOTE: Do NOT use prompt.txt here — it contains <tool_call> XML examples
-        # designed for Claude's append mode. Those examples confuse vLLM models into
-        # outputting raw <tool_call> tags instead of using the OpenAI tools API.
-        # Instead, use a concise system prompt that tells the model what to do
-        # without any XML tool-call examples.
+
+        # Read prompt from disk (same file as Claude path for consistency)
+        prompt_text = PROMPT_FILE.read_text().strip() if PROMPT_FILE.exists() else ""
         data_dir_line = f"Data directory: {data_dir}\n\n" if data_dir else ""
-        vllm_system = (
-            f"{data_dir_line}"
-            "You are an expert data analyst. "
-            "You have access to tools (Read, Bash, Grep, Glob) to read files and run commands. "
-            "Always use tools to gather information before answering — never guess or rely on training knowledge. "
-            "For large CSV/JSON files, ALWAYS use Bash with pandas/python instead of Read to avoid context overflow. "
-            "When analyzing data, read the relevant files first, then reason step by step. "
-            "Be precise and concise in your final answer."
-        )
+        vllm_system = f"{data_dir_line}{prompt_text}"
         return {
             "system": vllm_system,
-            "tools": HF_TOOLS,  # vLLM also uses tools, aligned with Claude mode
+            "tools": HF_TOOLS,
             "model_id": model or "",
             "backend": "vllm" if is_vllm_sdk() else "",
         }
 
+    # Claude SDK path — identical to original
     from claude_agent_sdk import ClaudeAgentOptions
+
     # Read prompt from disk
     prompt_text = PROMPT_FILE.read_text().strip()
 
@@ -96,7 +88,7 @@ def make_dabstep_agent_options(model: str | None = None, data_dir: str | None = 
     Returns:
         A callable that returns ClaudeAgentOptions configured with the model and data_dir.
     """
-    def factory():
+    def factory() -> Union[Any, dict]:
         return get_dabstep_agent_options(model=model, data_dir=data_dir)
     return factory
 

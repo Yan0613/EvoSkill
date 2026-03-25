@@ -158,7 +158,6 @@ async def main():
     print(f"Dataset: {len(data)} samples (level={args.level})")
 
     # Auto-discover context files from data-dir
-    # In huggingface mode, the model has no file-reading tools, so data_dir is optional
     data_dir = Path(args.data_dir).resolve()
     if data_dir.exists():
         context_file_names = sorted(f.name for f in data_dir.iterdir() if f.is_file())

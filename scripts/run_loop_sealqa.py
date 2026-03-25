@@ -6,27 +6,6 @@ import asyncio
 
 import pandas as pd
 
-from src.loop import SelfImprovingLoop, LoopConfig, LoopAgents
-from src.agent_profiles import (
-    Agent,
-    sealqa_agent_options,
-    make_sealqa_agent_options,
-    skill_proposer_options,
-    prompt_proposer_options,
-    skill_generator_options,
-    prompt_generator_options,
-)
-from src.agent_profiles.skill_generator import get_project_root
-from src.evaluation.sealqa_scorer import score_sealqa
-from src.registry import ProgramManager
-from src.schemas import (
-    AgentResponse,
-    SkillProposerResponse,
-    PromptProposerResponse,
-    ToolGeneratorResponse,
-    PromptGeneratorResponse,
-)
-
 
 def stratified_split(
     data: pd.DataFrame, train_ratio: float = 0.18, val_ratio: float = 0.12
@@ -71,6 +50,7 @@ def stratified_split(
 
 def _sealqa_scorer(question: str, predicted: str, ground_truth: str) -> float:
     """Wrapper around score_sealqa matching the runner's (question, predicted, ground_truth) signature."""
+    from src.evaluation.sealqa_scorer import score_sealqa
     return score_sealqa(question, ground_truth, predicted)
 
 
@@ -150,14 +130,66 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["opus", "sonnet", "haiku"],
         default="claude-opus-4-5-20251101",
-        help="Model for base agent (default: opus via SDK default)",
+        help="Model for base agent (default: claude-opus-4-5-20251101)",
+    )
+    # vLLM arguments
+    parser.add_argument(
+        "--vllm-base-url",
+        type=str,
+        default=None,
+        help="vLLM server URL (enables vLLM mode, e.g. http://29.206.1.136:8765/v1)",
+    )
+    parser.add_argument(
+        "--vllm-max-tokens",
+        type=int,
+        default=8192,
+        help="Max tokens for vLLM generation (default: 8192)",
+    )
+    parser.add_argument(
+        "--vllm-context-length",
+        type=int,
+        default=32768,
+        help="Context length for vLLM (default: 32768)",
     )
     return parser.parse_args()
 
 
 async def main(args: argparse.Namespace):
+    # Set up SDK (vLLM or Claude)
+    if args.vllm_base_url:
+        from src.agent_profiles import set_sdk, set_vllm_config
+        set_sdk("vllm")
+        set_vllm_config(
+            base_url=args.vllm_base_url,
+            model_name=args.model,
+            max_tokens=args.vllm_max_tokens,
+            context_length=args.vllm_context_length,
+        )
+        print(f"[Config] vLLM: {args.vllm_base_url}, model: {args.model}")
+
+    # Lazy imports after SDK is configured
+    from src.loop import SelfImprovingLoop, LoopConfig, LoopAgents
+    from src.agent_profiles import (
+        Agent,
+        sealqa_agent_options,
+        make_sealqa_agent_options,
+        skill_proposer_options,
+        prompt_proposer_options,
+        skill_generator_options,
+        prompt_generator_options,
+    )
+    from src.agent_profiles.skill_generator import get_project_root
+    from src.evaluation.sealqa_scorer import score_sealqa
+    from src.registry import ProgramManager
+    from src.schemas import (
+        AgentResponse,
+        SkillProposerResponse,
+        PromptProposerResponse,
+        ToolGeneratorResponse,
+        PromptGeneratorResponse,
+    )
+
     data = pd.read_csv(args.dataset)
 
     # Rename SEAL-QA columns to match stratified_split expectations

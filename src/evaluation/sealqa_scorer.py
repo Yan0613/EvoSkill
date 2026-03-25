@@ -134,7 +134,7 @@ def score_sealqa(question: str, ground_truth: str, predicted: str, grader_model:
 
     outputs = pipe(
         text,
-        max_new_tokens=1024,
+        max_new_tokens=32,
         do_sample=False,
         temperature=None,
         top_p=None,

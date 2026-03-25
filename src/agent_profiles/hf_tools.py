@@ -37,15 +37,23 @@ def _read_file(path: str, offset: int = 0, limit: int = 0) -> str:
             lines = f.readlines()
         total_lines = len(lines)
 
-        # Auto-cap large data files to header-only when no explicit limit given
+        # HARD GUARD: large data files (>1000 lines) must NEVER be fully dumped
+        # into context, regardless of the limit parameter. This mirrors Claude's
+        # built-in Read tool which paginates large files automatically.
+        # Even if the model explicitly requests limit=-1, we refuse and return
+        # only the header + a hint to use Bash+pandas. This prevents small models
+        # from accidentally blowing up the context window (e.g. 22MB payments.csv).
         _ext = os.path.splitext(path)[1].lower()
-        if limit == 0 and offset == 0 and _ext in _LARGE_FILE_EXTS and total_lines > 1000:
+        if _ext in _LARGE_FILE_EXTS and total_lines > 1000 and (limit == 0 or limit == -1) and offset == 0:
             header = lines[0] if lines else ""
             return (
                 header.rstrip("\n")
-                + f"\n\n[Large file ({total_lines} lines): only the header is shown. "
+                + f"\n\n[Large file ({total_lines} lines, ~{os.path.getsize(path) / 1024 / 1024:.1f}MB): "
+                f"only the header is shown to prevent context overflow. "
+                f"Do NOT attempt to Read this file with limit=-1. "
                 f"Use Bash with pandas/python to analyze data, e.g.:\n"
-                f"  python3 -c \"import pandas as pd; df=pd.read_csv('{path}'); ...\"]"
+                f"  python3 -c \"import pandas as pd; df=pd.read_csv('{path}'); print(df.head()); "
+                f"print(df.describe()); print(df.columns.tolist())\"]"
             )
 
         if offset:
@@ -146,6 +154,121 @@ def _write_file(path: str, content: str) -> str:
         return f"[Written {len(content)} bytes to {path}]"
     except Exception as e:
         return f"[Error writing {path}: {e}]"
+
+
+def _web_search(query: str, max_results: int = 5) -> str:
+    """Search the web using DuckDuckGo and return results.
+
+    This mirrors Claude's built-in WebSearch tool. Uses the ddgs package
+    (preferred) or duckduckgo_search (legacy), with a urllib fallback.
+    Results are capped to avoid flooding context.
+    """
+    def _format_results(results):
+        if not results:
+            return "[No search results found]"
+        lines = []
+        for i, r in enumerate(results, 1):
+            title = r.get("title", "")
+            href = r.get("href", r.get("link", ""))
+            body = r.get("body", r.get("snippet", ""))
+            lines.append(f"{i}. **{title}**\n   URL: {href}\n   {body}")
+        return "\n\n".join(lines)
+
+    # Try ddgs (new package name, recommended)
+    try:
+        from ddgs import DDGS
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+        return _format_results(results)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Try duckduckgo_search (old package name)
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+        return _format_results(results)
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # Fallback: use urllib to fetch DuckDuckGo HTML and parse results
+    try:
+        import urllib.parse
+        import urllib.request
+        import re
+        encoded_query = urllib.parse.quote_plus(query)
+        url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        if not html:
+            return "[Error: web search returned empty response]"
+
+        # Extract result snippets from DDG HTML
+        titles = re.findall(r'class="result__a"[^>]*>(.*?)</a>', html, re.DOTALL)
+        snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, re.DOTALL)
+        urls_found = re.findall(r'class="result__url"[^>]*>(.*?)</a>', html, re.DOTALL)
+
+        if not titles:
+            return f"[Web search completed but could not parse results. Raw length: {len(html)} chars]"
+
+        lines = []
+        for i, (title, snippet) in enumerate(zip(titles[:max_results], snippets[:max_results]), 1):
+            clean_title = re.sub(r'<[^>]+>', '', title).strip()
+            clean_snippet = re.sub(r'<[^>]+>', '', snippet).strip()
+            found_url = re.sub(r'<[^>]+>', '', urls_found[i-1]).strip() if i-1 < len(urls_found) else ""
+            lines.append(f"{i}. **{clean_title}**\n   URL: {found_url}\n   {clean_snippet}")
+        return "\n\n".join(lines) if lines else "[No results parsed from search]"
+    except Exception as e:
+        return f"[Error performing web search: {e}]"
+
+
+def _web_fetch(url: str, max_chars: int = 20000) -> str:
+    """Fetch a web page and return its text content.
+
+    This mirrors Claude's built-in WebFetch tool. Downloads the page,
+    strips HTML tags, and returns plain text. Output is capped to
+    max_chars to prevent context overflow.
+    """
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0 (compatible; research-bot/1.0)"}
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        if not html:
+            return f"[Error: empty response from {url}]"
+
+        # Try to extract text using basic HTML stripping
+        import re
+        # Remove script and style blocks
+        text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', ' ', text)
+        # Clean up whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        # Decode HTML entities
+        import html as html_mod
+        text = html_mod.unescape(text)
+
+        if not text:
+            return f"[Page fetched but no text content extracted from {url}]"
+
+        if len(text) > max_chars:
+            text = text[:max_chars] + f"\n\n[... content truncated at {max_chars} chars (total: {len(text)} chars)]"
+
+        return text
+    except (TimeoutError, OSError) as e:
+        return f"[Error: request to {url} timed out or network error: {e}]"
+    except Exception as e:
+        return f"[Error fetching {url}: {e}]"
 
 
 def _skill(name: str = "") -> str:
@@ -313,6 +436,40 @@ HF_TOOLS: dict = {
                 "content": {"type": "string", "description": "Content to write"},
             },
             "required": ["path", "content"],
+        },
+    },
+    "WebSearch": {
+        "fn": _web_search,
+        "description": (
+            "Search the web for information using a text query. "
+            "Returns a list of search results with titles, URLs, and snippets. "
+            "Use this when you need to find current/recent information that may not be in your training data. "
+            "For factual questions about current events, records, rankings, etc., always try WebSearch first."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query string"},
+                "max_results": {"type": "integer", "description": "Maximum number of results to return (default 5)"},
+            },
+            "required": ["query"],
+        },
+    },
+    "WebFetch": {
+        "fn": _web_fetch,
+        "description": (
+            "Fetch and read the content of a web page at a given URL. "
+            "Returns the text content of the page (HTML tags stripped). "
+            "Use after WebSearch to read the full content of a promising search result. "
+            "Output is capped at 20,000 characters to prevent context overflow."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL of the web page to fetch"},
+                "max_chars": {"type": "integer", "description": "Maximum characters to return (default 20000)"},
+            },
+            "required": ["url"],
         },
     },
     "Skill": {

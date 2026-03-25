@@ -386,13 +386,25 @@ class SelfImprovingLoop:
         if "base" not in self.manager.list_programs():
             current_options = get_base_agent_options()
 
+            # Support both ClaudeAgentOptions (object with attributes) and dict (vLLM path)
+            if isinstance(current_options, dict):
+                raw_prompt = current_options.get("system", "")
+                # ProgramConfig expects dict; wrap string prompts for vLLM path
+                system_prompt = raw_prompt if isinstance(raw_prompt, dict) else {"type": "text", "text": raw_prompt}
+                allowed_tools = list(current_options.get("tools", {}).keys())
+                output_format = None
+            else:
+                system_prompt = current_options.system_prompt
+                allowed_tools = current_options.allowed_tools
+                output_format = current_options.output_format
+
             base_config = ProgramConfig(
                 name="base",
                 parent=None,
                 generation=0,
-                system_prompt=current_options.system_prompt,
-                allowed_tools=current_options.allowed_tools,
-                output_format=current_options.output_format,
+                system_prompt=system_prompt,
+                allowed_tools=allowed_tools,
+                output_format=output_format,
                 metadata={},
             ).with_timestamp()
 

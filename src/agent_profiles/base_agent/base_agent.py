@@ -1,9 +1,10 @@
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Union
 if TYPE_CHECKING:
     from claude_agent_sdk import ClaudeAgentOptions
 from src.schemas import AgentResponse
 from src.agent_profiles.skill_generator import get_project_root
+from src.agent_profiles.sdk_config import is_claude_sdk
 import os
 
 
@@ -13,9 +14,9 @@ BASE_AGENT_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep", "Edit", "WebFetch",
 PROMPT_FILE = Path(__file__).parent / "prompt.txt"
 
 
-def get_base_agent_options(model: str | None = None):
+def get_base_agent_options(model: str | None = None) -> Union[Any, dict]:
     """
-    Factory function that creates ClaudeAgentOptions with the current prompt.
+    Factory function that creates agent options with the current prompt.
 
     Reads prompt.txt from disk each time, allowing dynamic updates
     without restarting the Python process.
@@ -23,7 +24,26 @@ def get_base_agent_options(model: str | None = None):
     Args:
         model: Model to use (e.g., "opus", "sonnet"). If None, uses SDK default.
     """
+    if not is_claude_sdk():
+        # HuggingFace / vLLM path: return a plain dict with Python tool implementations
+        from src.agent_profiles.sdk_config import is_vllm_sdk
+        from src.agent_profiles.hf_tools import HF_TOOLS
+
+        # Read prompt from disk (same file as Claude path for consistency)
+        prompt_text = PROMPT_FILE.read_text().strip() if PROMPT_FILE.exists() else ""
+        file_path = os.path.join(get_project_root(), "treasury_bulletins_parsed/")
+        data_dir_line = f"Data directory: {file_path}\n\n" if os.path.isdir(file_path) else ""
+        vllm_system = f"{data_dir_line}{prompt_text}"
+        return {
+            "system": vllm_system,
+            "tools": HF_TOOLS,
+            "model_id": model or "",
+            "backend": "vllm" if is_vllm_sdk() else "",
+        }
+
+    # Claude SDK path — identical to original
     from claude_agent_sdk import ClaudeAgentOptions
+
     # Read prompt from disk
     prompt_text = PROMPT_FILE.read_text().strip()
 
@@ -64,9 +84,9 @@ def make_base_agent_options(model: str | None = None):
         model: Model to use (e.g., "opus", "sonnet"). If None, uses SDK default.
 
     Returns:
-        A callable that returns ClaudeAgentOptions configured with the model.
+        A callable that returns agent options configured with the model.
     """
-    def factory():
+    def factory() -> Union[Any, dict]:
         return get_base_agent_options(model=model)
     return factory
 

@@ -321,7 +321,7 @@ class Agent(Generic[T]):
         )
         return "\n".join(lines)
 
-    async def _execute_vllm_query(self, query: str, system_text: str, tools: dict | None = None) -> list[Any]:
+    async def _execute_vllm_query(self, query: str, system_text: str, tools: dict | None = None, output_format: dict | None = None) -> list[Any]:
         """Execute query using vLLM OpenAI-compatible server, with OpenAI tools API.
 
         Uses the standard OpenAI tools API (tool_choice="auto") for tool calling.
@@ -332,6 +332,12 @@ class Agent(Generic[T]):
         Skills are auto-injected into the system prompt (mirroring Claude's
         setting_sources=["user", "project"] behavior) so the model knows which
         skills are available without needing to call Skill(name="list") first.
+
+        Args:
+            output_format: Optional dict with {"type": "json_schema", "schema": {...}}
+                          for structured output. When provided, the FINAL_ANSWER
+                          instruction includes the JSON schema so the model knows
+                          exactly what fields to output.
         """
         import json
         import re
@@ -349,7 +355,22 @@ class Agent(Generic[T]):
             # Only inject FINAL_ANSWER suffix when tools are used (agentic tasks).
             # For pure generation tasks (tools=None, e.g. LiveCodeBench), the model
             # should output code directly without XML tags.
-            full_system = full_system + self.VLLM_FINAL_ANSWER_SUFFIX
+            if output_format and output_format.get("type") == "json_schema":
+                # Structured output: inject JSON schema into FINAL_ANSWER instruction
+                schema = output_format.get("schema", {})
+                schema_str = json.dumps(schema, indent=2)
+                full_system = full_system + (
+                    "\n\nIMPORTANT: At the end of your response, you MUST output your final answer "
+                    "as a JSON object inside <FINAL_ANSWER>...</FINAL_ANSWER> tags.\n"
+                    "The JSON MUST conform to this exact schema:\n"
+                    f"```json\n{schema_str}\n```\n"
+                    "Rules:\n"
+                    "- Output ONLY valid JSON inside the <FINAL_ANSWER> tags, no other text.\n"
+                    "- All required fields MUST be present.\n"
+                    "- Do NOT omit the <FINAL_ANSWER> tag. It is required."
+                )
+            else:
+                full_system = full_system + self.VLLM_FINAL_ANSWER_SUFFIX
 
         # Build OpenAI-format tool definitions from tools dict.
         # vLLM with --tool-call-parser hermes will inject these into the chat
@@ -610,7 +631,8 @@ class Agent(Generic[T]):
             system_text = _safe_extract_system_from_provider(self._options)
             tools = _safe_extract_tools_from_provider(self._options)
             if is_vllm_sdk():
-                return await self._execute_vllm_query(query, system_text, tools)
+                output_format = _safe_extract_output_format_from_provider(self._options)
+                return await self._execute_vllm_query(query, system_text, tools, output_format=output_format)
             else:
                 return await self._execute_hf_query(query, system_text, tools)
 
@@ -704,13 +726,14 @@ class Agent(Generic[T]):
                 )
             except Exception as e:
                 last_error = e
-                # 400 context-too-long errors will never succeed on retry — fail fast
-                err_str = str(e)
-                if "400" in err_str and ("context length" in err_str or "input_tokens" in err_str or "BadRequestError" in err_str):
-                    logger.warning(
-                        f"Attempt {attempt + 1}/{self.MAX_RETRIES} failed with non-retryable 400 error, giving up immediately: {e}"
-                    )
-                    break
+                # For vLLM/HF: 400 context-too-long errors will never succeed on retry — fail fast
+                if is_huggingface_sdk() or is_vllm_sdk():
+                    err_str = str(e)
+                    if "400" in err_str and ("context length" in err_str or "input_tokens" in err_str or "BadRequestError" in err_str):
+                        logger.warning(
+                            f"Attempt {attempt + 1}/{self.MAX_RETRIES} failed with non-retryable 400 error, giving up immediately: {e}"
+                        )
+                        break
                 logger.warning(
                     f"Attempt {attempt + 1}/{self.MAX_RETRIES} failed: {e}. Retrying in {backoff}s..."
                 )
@@ -737,7 +760,32 @@ class Agent(Generic[T]):
                 try:
                     output = self.response_model.model_validate(raw_structured_output)
                 except (ValidationError, json.JSONDecodeError, TypeError) as e:
-                    parse_error = f"{type(e).__name__}: {str(e)}"
+                    # Fallback: the vLLM path wraps output as {"final_answer": "...", "reasoning": "..."}.
+                    # The model may have put valid JSON for the response_model inside final_answer.
+                    # Try to parse final_answer as JSON and validate against response_model.
+                    fallback_parsed = False
+                    if isinstance(raw_structured_output, dict) and "final_answer" in raw_structured_output:
+                        fa = raw_structured_output["final_answer"]
+                        if isinstance(fa, str) and fa.strip():
+                            # Strip any residual XML tags (e.g. </FINAL_ANSWER>) from the value
+                            import re as _re
+                            cleaned = _re.sub(r'</?FINAL_ANSWER[^>]*>', '', fa).strip()
+                            # Try to extract JSON from the string (may be wrapped in markdown code blocks)
+                            json_match = _re.search(r'\{[\s\S]*\}', cleaned)
+                            if json_match:
+                                parsed = self._repair_json(json_match.group(0))
+                                if parsed is not None:
+                                    try:
+                                        output = self.response_model.model_validate(parsed)
+                                        raw_structured_output = parsed
+                                        fallback_parsed = True
+                                        logger.info(
+                                            f"[vLLM] Successfully parsed response_model from final_answer JSON"
+                                        )
+                                    except (ValidationError, TypeError):
+                                        pass
+                    if not fallback_parsed:
+                        parse_error = f"{type(e).__name__}: {str(e)}"
             else:
                 parse_error = "No structured output returned"
 
@@ -959,6 +1007,35 @@ def _safe_extract_tools_from_provider(options_provider: Any) -> dict | None:
     return None
 
 
+def _safe_extract_output_format_from_provider(options_provider: Any) -> dict | None:
+    """Safely extract output_format dict from an options provider.
+
+    For vLLM backends, the factory may return a dict with an 'output_format' key
+    containing {"type": "json_schema", "schema": {...}}. This is used to inject
+    the JSON schema into the FINAL_ANSWER instruction so the model knows exactly
+    what structured output to produce.
+
+    Returns a dict like {"type": "json_schema", "schema": {...}} or None.
+    """
+    if options_provider is None:
+        return None
+
+    # If it's a dict, extract output_format key
+    if isinstance(options_provider, dict):
+        return options_provider.get("output_format") or None
+
+    # If it's a callable, call it to get the options dict
+    if callable(options_provider):
+        try:
+            result = options_provider()
+            if isinstance(result, dict):
+                return result.get("output_format") or None
+        except Exception:
+            pass
+
+    return None
+
+
 def _compress_messages_history(messages: list, vllm_cfg: dict) -> list:
     """Compress early tool result messages when the conversation history grows too large.
 
@@ -1093,6 +1170,10 @@ class HFRunner:
     def __init__(self, model_name: str, max_new_tokens: int = 512, device: str = "auto"):
         import os
         # Ensure proxy is set for model download
+        # TODO: replace this or delete it
+        os.environ.setdefault("HTTP_PROXY", "proxy1")
+        os.environ.setdefault("HTTPS_PROXY", "peoxy2")
+        os.environ.setdefault("HF_TOKEN", "youtoken")
 
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
