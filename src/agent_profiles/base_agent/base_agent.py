@@ -1,5 +1,7 @@
 from pathlib import Path
-from claude_agent_sdk import ClaudeAgentOptions
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from claude_agent_sdk import ClaudeAgentOptions
 from src.schemas import AgentResponse
 from src.agent_profiles.skill_generator import get_project_root
 import os
@@ -11,7 +13,7 @@ BASE_AGENT_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep", "Edit", "WebFetch",
 PROMPT_FILE = Path(__file__).parent / "prompt.txt"
 
 
-def get_base_agent_options(model: str | None = None) -> ClaudeAgentOptions:
+def get_base_agent_options(model: str | None = None):
     """
     Factory function that creates ClaudeAgentOptions with the current prompt.
 
@@ -21,6 +23,7 @@ def get_base_agent_options(model: str | None = None) -> ClaudeAgentOptions:
     Args:
         model: Model to use (e.g., "opus", "sonnet"). If None, uses SDK default.
     """
+    from claude_agent_sdk import ClaudeAgentOptions
     # Read prompt from disk
     prompt_text = PROMPT_FILE.read_text().strip()
 
@@ -63,7 +66,7 @@ def make_base_agent_options(model: str | None = None):
     Returns:
         A callable that returns ClaudeAgentOptions configured with the model.
     """
-    def factory() -> ClaudeAgentOptions:
+    def factory():
         return get_base_agent_options(model=model)
     return factory
 
