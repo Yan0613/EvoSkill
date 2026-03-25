@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
-from claude_agent_sdk import ClaudeAgentOptions
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from claude_agent_sdk import ClaudeAgentOptions
 
 from src.schemas import ToolGeneratorResponse
 from src.agent_profiles.skill_generator.prompt import SKILL_GENERATOR_SYSTEM_PROMPT
@@ -30,11 +32,17 @@ skill_generator_output_format = {
 # Default available tools for skill generator
 SKILL_GENERATOR_TOOLS = ["Read", "Write", "Bash", "Glob", "Grep", "Edit", "WebFetch", "WebSearch", "TodoWrite", "BashOutput", "Skill"]
 
-skill_generator_options = ClaudeAgentOptions(
-    output_format=skill_generator_output_format,
-    system_prompt=skill_generator_system_prompt,
-    setting_sources=["user", "project"],
-    allowed_tools=SKILL_GENERATOR_TOOLS,
-    permission_mode='acceptEdits',
-    cwd=get_project_root(),
-)
+
+def _make_skill_generator_options():
+    from claude_agent_sdk import ClaudeAgentOptions
+    return ClaudeAgentOptions(
+        output_format=skill_generator_output_format,
+        system_prompt=skill_generator_system_prompt,
+        setting_sources=["user", "project"],
+        allowed_tools=SKILL_GENERATOR_TOOLS,
+        permission_mode='acceptEdits',
+        cwd=get_project_root(),
+    )
+
+
+skill_generator_options = _make_skill_generator_options

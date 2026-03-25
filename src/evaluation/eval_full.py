@@ -26,8 +26,12 @@ def load_results(path: Path) -> list[IndexedEvalResult]:
     """Load results from pkl file."""
     if not path.exists():
         return []
-    with open(path, "rb") as f:
-        return pickle.load(f)
+    try:
+        with open(path, "rb") as f:
+            return pickle.load(f)
+    except (EOFError, pickle.UnpicklingError):
+        # Corrupted or empty pkl file - treat as empty
+        return []
 
 
 def get_successful_indices(path: Path) -> set[int]:
