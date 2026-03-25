@@ -84,6 +84,7 @@ if [ ! -f ".dataset/seal-0.csv" ]; then
 import os
 from datasets import load_dataset
 import os as _os
+#set proxy and hf token there
 _os.makedirs('.dataset', exist_ok=True)
 ds = load_dataset('seal-research/seal-qa', split='test')
 ds.to_csv('.dataset/seal-0.csv', index=False)
