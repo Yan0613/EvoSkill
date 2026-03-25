@@ -1,4 +1,6 @@
-from claude_agent_sdk import ClaudeAgentOptions
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from claude_agent_sdk import ClaudeAgentOptions
 from src.schemas import PromptProposerResponse
 from src.agent_profiles.prompt_proposer.prompt import PROMPT_PROPOSER_SYSTEM_PROMPT
 from src.agent_profiles.skill_generator import get_project_root
@@ -27,9 +29,15 @@ prompt_proposer_output_format = {
     "schema": PromptProposerResponse.model_json_schema(),
 }
 
-prompt_proposer_options = ClaudeAgentOptions(
-    output_format=prompt_proposer_output_format,
-    system_prompt=prompt_proposer_system_prompt,
-    allowed_tools=PROMPT_PROPOSER_TOOLS,
-    cwd=get_project_root(),
-)
+
+def _make_prompt_proposer_options():
+    from claude_agent_sdk import ClaudeAgentOptions
+    return ClaudeAgentOptions(
+        output_format=prompt_proposer_output_format,
+        system_prompt=prompt_proposer_system_prompt,
+        allowed_tools=PROMPT_PROPOSER_TOOLS,
+        cwd=get_project_root(),
+    )
+
+
+prompt_proposer_options = _make_prompt_proposer_options
