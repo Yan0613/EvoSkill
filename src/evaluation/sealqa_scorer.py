@@ -74,81 +74,37 @@ Just return the letters "A", "B", or "C", with no text around it.
 """.strip()
 import dspy
 
-# Lazy-loaded grader model (singleton)
-_grader_pipeline = None
-_grader_model_name: str | None = None
-
-
-def _get_grader_pipeline(model_name: str = "Qwen/Qwen3-4B"):
-    """Return a cached transformers text-generation pipeline for grading."""
-    global _grader_pipeline, _grader_model_name
-    if _grader_pipeline is None or _grader_model_name != model_name:
-        from transformers import pipeline, AutoTokenizer
-        import torch
-        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        _grader_pipeline = pipeline(
-            "text-generation",
-            model=model_name,
-            tokenizer=tokenizer,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True,
-        )
-        _grader_model_name = model_name
-    return _grader_pipeline
-
-
 def score_sealqa(question: str, ground_truth: str, predicted: str, grader_model: str = "Qwen/Qwen3-4B") -> float:
-    """Score a SEAL-QA answer using a local HuggingFace model. Returns 0.0 or 1.0."""
+    """Score a SEAL-QA answer using the vLLM server. Returns 0.0 or 1.0."""
+    import re
+    from src.agent_profiles.sdk_config import get_vllm_config, is_vllm_sdk
+    from openai import OpenAI
+
     prompt = GRADER_TEMPLATE.format(
         question=question,
         target=ground_truth,
         predicted_answer=predicted,
     )
 
-    pipe = _get_grader_pipeline(grader_model)
-    tokenizer = pipe.tokenizer
-
-    messages = [
-        {"role": "user", "content": prompt},
-    ]
-
-    # Apply chat template if available
-    # For Qwen3, enable_thinking=False is critical to get direct A/B/C output
-    if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
-        try:
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,  # Disable thinking for grader (need direct A/B/C)
-            )
-        except TypeError:
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
+    if is_vllm_sdk():
+        cfg = get_vllm_config()
+        client = OpenAI(base_url=cfg["base_url"], api_key=cfg["api_key"])
+        model = cfg["model_name"]
     else:
-        text = prompt
+        client = OpenAI(base_url="http://localhost:8765/v1", api_key="EMPTY")
+        model = "Qwen/Qwen2.5-7B-Instruct"
 
-    outputs = pipe(
-        text,
-        max_new_tokens=32,
-        do_sample=False,
-        temperature=None,
-        top_p=None,
-        return_full_text=False,
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=16,
+        temperature=0,
     )
 
-    raw = outputs[0]["generated_text"].strip()
-    # Extract first letter A/B/C (handle thinking output like <think>...</think>A)
-    import re
-    # Remove any thinking tags first
+    raw = response.choices[0].message.content.strip()
     raw_clean = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
     match = re.search(r'\b([ABC])\b', raw_clean.upper())
     if not match:
-        # Fallback: search in full raw output
         match = re.search(r'\b([ABC])\b', raw.upper())
     grade = match.group(1) if match else raw_clean[:1].upper()
     return 1.0 if grade == "A" else 0.0

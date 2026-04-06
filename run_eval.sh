@@ -30,7 +30,7 @@ echo "============================================================"
 # 1. DABStep
 # ─────────────────────────────────────────────────────────────────
 echo ""
-echo ">>> [1/3] DABStep benchmark"
+echo ">>> [1/4] DABStep benchmark"
 
 rm -f results/dabstep_qwen25_72b.pkl
 
@@ -54,7 +54,7 @@ echo ">>> DABStep done."
 # 2. LiveCodeBench
 # ─────────────────────────────────────────────────────────────────
 echo ""
-echo ">>> [2/3] LiveCodeBench benchmark"
+echo ">>> [2/4] LiveCodeBench benchmark"
 
 rm -f results/livecodebench_qwen25_72b.pkl
 
@@ -76,7 +76,7 @@ echo ">>> LiveCodeBench done."
 # 3. SEAL-QA
 # ─────────────────────────────────────────────────────────────────
 echo ""
-echo ">>> [3/3] SEAL-QA benchmark"
+echo ">>> [3/4] SEAL-QA benchmark"
 
 if [ ! -f ".dataset/seal-0.csv" ]; then
     echo "    Downloading SEAL-QA dataset..."
@@ -108,6 +108,35 @@ if [ -f ".dataset/seal-0.csv" ]; then
     echo ">>> SEAL-QA done."
 else
     echo "    [SKIP] SEAL-QA dataset not available"
+fi
+
+# ─────────────────────────────────────────────────────────────────
+# 4. OfficeQA
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo ">>> [4/4] OfficeQA benchmark"
+
+OFFICEQA_DATASET=".dataset/officeqa/officeqa_pro.csv"
+
+if [ ! -f "$OFFICEQA_DATASET" ]; then
+    echo "    [SKIP] OfficeQA dataset not found at $OFFICEQA_DATASET"
+else
+    rm -f results/officeqa_qwen25_72b.pkl
+
+    python3 -W ignore scripts/run_eval.py \
+        --sdk vllm \
+        --model "$HF_MODEL" \
+        --vllm_base_url "$VLLM_BASE_URL" \
+        --vllm_max_tokens "$MAX_TOKENS" \
+        --vllm_context_length "$CONTEXT_LENGTH" \
+        --max_concurrent "$MAX_CONCURRENT" \
+        --dataset_path "$OFFICEQA_DATASET" \
+        --output results/officeqa_qwen25_72b.pkl \
+        --resume False \
+        2>&1 | grep -v "pynvml\|FutureWarning\|torch_dtype\|Loading checkpoint\|generation flags" \
+        | tee "$LOG_DIR/officeqa.log"
+
+    echo ">>> OfficeQA done."
 fi
 
 # ─────────────────────────────────────────────────────────────────

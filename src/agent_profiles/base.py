@@ -426,7 +426,7 @@ class Agent(Generic[T]):
 
         raw_output = ""
         num_turns = 0
-        MAX_TOOL_TURNS = 10
+        MAX_TOOL_TURNS = 30
 
         while num_turns < MAX_TOOL_TURNS:
             num_turns += 1
@@ -1283,7 +1283,7 @@ class HFRunner:
             {"role": "user", "content": user_query},
         ]
 
-        MAX_TOOL_TURNS = 10
+        MAX_TOOL_TURNS = 30
         for _ in range(MAX_TOOL_TURNS):
             # Apply chat template with tools
             try:
