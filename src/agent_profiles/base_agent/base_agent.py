@@ -31,7 +31,7 @@ def get_base_agent_options(model: str | None = None) -> Union[Any, dict]:
 
         # Read prompt from disk (same file as Claude path for consistency)
         prompt_text = PROMPT_FILE.read_text().strip() if PROMPT_FILE.exists() else ""
-        file_path = os.path.join(get_project_root(), ".dataset/officeqa/treasury_bulletins_parsed/")
+        file_path = os.path.join(get_project_root(), ".dataset/officeqa/treasury_bulletins_parsed/jsons/")
         data_dir_line = f"Data directory: {file_path}\n\n" if os.path.isdir(file_path) else ""
 
         if is_vllm_sdk():
@@ -76,7 +76,7 @@ def get_base_agent_options(model: str | None = None) -> Union[Any, dict]:
         "schema": AgentResponse.model_json_schema()
     }
 
-    file_path = os.path.join(get_project_root(), ".dataset/officeqa/treasury_bulletins_parsed/")
+    file_path = os.path.join(get_project_root(), ".dataset/officeqa/treasury_bulletins_parsed/jsons/")
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,

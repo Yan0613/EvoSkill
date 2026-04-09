@@ -217,9 +217,34 @@ class Agent(Generic[T]):
             return json.loads(repaired)
         except Exception:
             pass
-        # Strategy 3: bracket completion heuristics
+        # Strategy 3: escape raw control characters inside JSON strings.
+        # Qwen2.5-7B often generates Write(content="...code...") where the
+        # code contains literal newlines/tabs (not \n/\t escapes), which are
+        # invalid JSON control characters. A simple state machine escapes them.
+        def _escape_ctrl(s: str) -> str:
+            out, in_str, esc = [], False, False
+            for ch in s:
+                if esc:
+                    out.append(ch); esc = False
+                elif ch == '\\' and in_str:
+                    out.append(ch); esc = True
+                elif ch == '"':
+                    out.append(ch); in_str = not in_str
+                elif in_str and ch == '\n':
+                    out.append('\\n')
+                elif in_str and ch == '\r':
+                    out.append('\\r')
+                elif in_str and ch == '\t':
+                    out.append('\\t')
+                else:
+                    out.append(ch)
+            return ''.join(out)
+        try:
+            return json.loads(_escape_ctrl(raw))
+        except json.JSONDecodeError:
+            pass
+        # Strategy 4: bracket completion heuristics
         for suffix in ["", "}", '"}', "}}", '"}}', "}}}"]:
-
             try:
                 return json.loads(raw + suffix)
             except json.JSONDecodeError:
@@ -515,27 +540,33 @@ class Agent(Generic[T]):
                 continue  # next turn
 
             # ── Case 2: hermes parser failed → parse <tool_call> tags from content ──
-            # hermes_tool_parser raises JSONDecodeError ("Extra data") when Qwen2.5
-            # generates multiple JSON objects inside one <tool_call> tag, or other
-            # non-standard JSON. In that case vLLM puts the raw content in msg.content
-            # with msg.tool_calls empty. We parse client-side as fallback.
+            # hermes_tool_parser raises JSONDecodeError when Qwen2.5 generates
+            # non-standard JSON (e.g. unescaped newlines/backticks in code strings,
+            # or multiple JSON objects in one <tool_call> tag). vLLM falls back to
+            # putting raw content in msg.content with msg.tool_calls empty.
+            # We parse <tool_call> tags client-side and execute them.
             #
-            # IMPORTANT: If the model emitted a FINAL_ANSWER in the same turn as
-            # tool_call tags (common with small models that don't follow the protocol),
-            # skip tool execution and treat the content as the final answer directly.
-            # This avoids executing tools whose results the model never actually waited
-            # for, which would produce incorrect/stale results.
-            # Detect both <FINAL_ANSWER> tag format and bare "FINAL_ANSWER" text
-            # prefix (Qwen2.5-7B often emits the latter without XML tags).
-            has_final_answer_in_content = bool(re.search(
-                r'(?:<FINAL_ANSWER>|\bFINAL_ANSWER\b)', content, re.IGNORECASE
-            ))
+            # NOTE: We execute the tool even when FINAL_ANSWER also appears in the
+            # same content. Small models (esp. 7B) often write tool call + premature
+            # FINAL_ANSWER in one shot without waiting for the actual tool result.
+            # The "answer" is based on predicted (not real) output — for code tasks
+            # (LiveCodeBench) this means untested code. Executing the tool and letting
+            # the model re-answer with real results is always more correct.
+            # We strip the premature FINAL_ANSWER from the appended assistant message
+            # so the model is not anchored to its unverified prediction.
             tool_call_tags = re.findall(
                 r'<tool_call>\s*(.*?)\s*</tool_call>', content, re.DOTALL
             )
-            if tool_call_tags and tools and not has_final_answer_in_content:
+            if tool_call_tags and tools:
                 any_dispatched = False
-                messages.append({"role": "assistant", "content": content})
+                # Strip premature FINAL_ANSWER from content before appending:
+                # the model predicted an answer without having seen tool results yet.
+                # Keeping it in the message would anchor the model to a wrong answer.
+                content_for_msg = re.sub(
+                    r'\s*<FINAL_ANSWER>.*?</FINAL_ANSWER>', '', content,
+                    flags=re.DOTALL | re.IGNORECASE,
+                ).strip()
+                messages.append({"role": "assistant", "content": content_for_msg})
                 tool_results = []
                 # Collect all valid (fn_name, fn_args) pairs first.
                 # NOTE: We only execute the FIRST valid tool call per turn to enforce

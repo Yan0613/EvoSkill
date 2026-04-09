@@ -121,8 +121,28 @@ def _serialize_response(resp) -> dict:
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 PROMPT_TEMPLATE = """You are an expert data analyst and you will answer factoid questions by loading and referencing the files/documents listed below.
+
+## Context files and their purpose
+
+- **manual.md** — Domain manual. Defines all key terms and business rules (e.g. how "fraud" is measured, how fees are calculated). **Read this first before querying any data file.**
+- **payments-readme.md** — Column-level documentation for payments.csv. Explains every field (types, categories, meaning).
+- **payments.csv** — Transaction-level data (~138K rows). Each row is one payment. Key columns: `ip_country`, `has_fraudulent_dispute`, `eur_amount`, `card_scheme`, `is_credit`, `aci`, etc.
+- **fees.json** — Fee rules per card scheme. Each rule has: `card_scheme`, `is_credit`, `fixed_amount`, `rate` (integer, multiply by transaction value and divide by 10000 to get the variable fee), `aci`, `account_type`, etc.
+- **merchant_data.json** — Merchant profile data: `merchant_id`, `account_type`, `capture_delay`, `monthly_fraud_level`, `monthly_volume`, `merchant_category_code`.
+- **merchant_category_codes.csv** — Lookup table: MCC code → category description.
+- **acquirer_countries.csv** — Lookup table: acquirer identifier → country.
+- **merge_script.py** — Helper script showing how to join payments.csv with fees.json and merchant_data.json.
+
 You have these files available:
 {context_files}
+
+**IMPORTANT: Always read `manual.md` first to understand domain definitions before writing any code or querying data.**
+
+## Critical domain definitions (from manual.md — apply these exactly)
+
+- **Fraud** is the **ratio** (rate) of fraudulent volume over total volume — NOT a count of transactions. To find the "top country for fraud", compute `sum(eur_amount where has_fraudulent_dispute) / sum(eur_amount)` per group, then take the max.
+- **Fee formula**: `fee = fixed_amount + rate * transaction_value / 10000` — the `rate` field in fees.json is an integer that must be divided by 10000.
+- **Intracountry**: a transaction is domestic if the issuer country equals the acquiring country.
 
 Here is the question you need to answer:
 {question}

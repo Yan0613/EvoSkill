@@ -9,8 +9,8 @@ cd "$SCRIPT_DIR"
 export PYTHONPATH="$SCRIPT_DIR"
 
 
-HF_MODEL="Qwen/Qwen2.5-7B-Instruct"
-MAX_TOKENS=8192
+HF_MODEL="Qwen/Qwen2.5-32B-Instruct"
+MAX_TOKENS=4096
 CONTEXT_LENGTH=32768
 MAX_CONCURRENT=64
 VLLM_PORT=8765
@@ -137,7 +137,7 @@ else
         | tee "$LOG_DIR/officeqa.log"
 
     echo ">>> OfficeQA done."
-fi
+fi 
 
 # ─────────────────────────────────────────────────────────────────
 # Summary

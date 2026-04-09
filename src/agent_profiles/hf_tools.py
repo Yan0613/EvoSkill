@@ -235,6 +235,10 @@ def _web_fetch(url: str, max_chars: int = 20000) -> str:
     strips HTML tags, and returns plain text. Output is capped to
     max_chars to prevent context overflow.
     """
+    # Auto-fix missing scheme (model sometimes omits https://)
+    if url and not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
     try:
         import urllib.request
         req = urllib.request.Request(

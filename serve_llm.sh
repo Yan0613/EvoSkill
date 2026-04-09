@@ -7,12 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 export HF_HUB_OFFLINE=0
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 export LD_PRELOAD=/hkfs/work/workspace/scratch/lmu_eqm3765-misc/conda_envs/evoskill/lib/libstdc++.so.6
 
-HF_MODEL="Qwen/Qwen2.5-7B-Instruct"
+HF_MODEL="Qwen/Qwen2.5-32B-Instruct"
 VLLM_PORT=8765
-TP_SIZE=2
+TP_SIZE=4
 LOG_DIR="$SCRIPT_DIR/results/logs"
 mkdir -p "$LOG_DIR"
 
