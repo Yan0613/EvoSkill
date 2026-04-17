@@ -37,19 +37,21 @@ def _read_file(path: str, offset: int = 0, limit: int = 0) -> str:
             lines = f.readlines()
         total_lines = len(lines)
 
-        # HARD GUARD: large data files (>1000 lines) must NEVER be fully dumped
-        # into context, regardless of the limit parameter. This mirrors Claude's
-        # built-in Read tool which paginates large files automatically.
-        # Even if the model explicitly requests limit=-1, we refuse and return
-        # only the header + a hint to use Bash+pandas. This prevents small models
-        # from accidentally blowing up the context window (e.g. 22MB payments.csv).
+        # HARD GUARD: large data files must NEVER be fully dumped into context.
+        # Two conditions trigger the guard (either is sufficient):
+        #   1. More than 1000 lines (multi-line CSV/TSV/JSONL)
+        #   2. File size > 50KB (catches single-line JSON like treasury bulletins,
+        #      where total_lines==1 but the file is hundreds of KB or even MB)
+        # This mirrors Claude's built-in Read tool which paginates large files.
         _ext = os.path.splitext(path)[1].lower()
-        if _ext in _LARGE_FILE_EXTS and total_lines > 1000 and (limit == 0 or limit == -1) and offset == 0:
+        _file_size = os.path.getsize(path)
+        _is_large = (total_lines > 1000) or (_ext in _LARGE_FILE_EXTS and _file_size > 50 * 1024)
+        if _is_large and _ext in _LARGE_FILE_EXTS and (limit == 0 or limit == -1) and offset == 0:
             header = lines[0] if lines else ""
             return (
-                header.rstrip("\n")
-                + f"\n\n[Large file ({total_lines} lines, ~{os.path.getsize(path) / 1024 / 1024:.1f}MB): "
-                f"only the header is shown to prevent context overflow. "
+                header.rstrip("\n")[:500]  # cap header preview to 500 chars for single-line JSON
+                + f"\n\n[Large file ({total_lines} lines, ~{_file_size / 1024:.1f}KB): "
+                f"only the first 500 chars are shown to prevent context overflow. "
                 f"Do NOT attempt to Read this file with limit=-1. "
                 f"Use Bash with pandas/python to analyze data, e.g.:\n"
                 f"  python3 -c \"import pandas as pd; df=pd.read_csv('{path}'); print(df.head()); "

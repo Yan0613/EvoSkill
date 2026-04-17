@@ -536,7 +536,7 @@ class Agent(Generic[T]):
                         "content": tool_result_str,
                     })
                 # Compress early tool results if messages history is getting too large
-                messages = _compress_messages_history(messages, vllm_cfg)
+                messages = await _compress_messages_history(messages, vllm_cfg)
                 continue  # next turn
 
             # ── Case 2: hermes parser failed → parse <tool_call> tags from content ──
@@ -615,13 +615,42 @@ class Agent(Generic[T]):
                         f"from <tool_call> tags, total messages: {len(messages)}"
                     )
                     # Compress early tool results if messages history is getting too large
-                    messages = _compress_messages_history(messages, vllm_cfg)
+                    messages = await _compress_messages_history(messages, vllm_cfg)
                     continue  # next turn
 
             # ── Final answer: no tool calls ──
 
             raw_output = content
             break
+
+        # ── Max turns exhausted: force a final-answer turn ──
+        # If the model kept calling tools for all MAX_TOOL_TURNS turns, raw_output
+        # is still "". The while loop exits via the condition (not via break), so
+        # no content was ever captured. Send one final no-tools request so the model
+        # can output its best answer based on the tool results it has already seen.
+        if not raw_output:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "You have used all available tool turns. "
+                    "Based on everything you have done so far, output your best final answer now. "
+                    "You MUST wrap it in <FINAL_ANSWER>...</FINAL_ANSWER> tags."
+                ),
+            })
+            try:
+                forced_response = await client.chat.completions.create(
+                    model=vllm_cfg["model_name"],
+                    messages=messages,
+                    max_tokens=vllm_cfg["max_tokens"],
+                    temperature=0,
+                )
+                raw_output = forced_response.choices[0].message.content or ""
+                logger.info(
+                    f"[vLLM] Max turns exhausted — forced final-answer turn produced "
+                    f"{len(raw_output)} chars"
+                )
+            except Exception as forced_err:
+                logger.warning(f"[vLLM] Forced final-answer turn failed: {forced_err}")
 
         # Extract <FINAL_ANSWER> tag (XML format) or bare "FINAL_ANSWER" keyword
         # (Qwen2.5-7B often emits: "...<tool_call>...</tool_call>\nFINAL_ANSWER```python...```"
@@ -1067,21 +1096,57 @@ def _safe_extract_output_format_from_provider(options_provider: Any) -> dict | N
     return None
 
 
-def _compress_messages_history(messages: list, vllm_cfg: dict) -> list:
+async def _summarize_content_with_llm(content: str, vllm_cfg: dict) -> str:
+    """Use vLLM to produce a concise summary of a tool result message.
+
+    Falls back to head-truncation if the LLM call fails, so the agentic loop
+    is never blocked by a summarization error.
+
+    Args:
+        content: The raw tool result text to summarize.
+        vllm_cfg: vLLM config dict (base_url, api_key, model_name, max_tokens).
+
+    Returns:
+        A short summary string (≤ 300 chars on failure fallback, or LLM output).
+    """
+    prompt = (
+        "Summarize the following tool output in 2-4 concise sentences. "
+        "Preserve key facts, numbers, file names, and error messages. "
+        "Do NOT include any preamble — output only the summary.\n\n"
+        f"Tool output:\n{content}"
+    )
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(
+            base_url=vllm_cfg["base_url"],
+            api_key=vllm_cfg["api_key"],
+        )
+        response = await client.chat.completions.create(
+            model=vllm_cfg["model_name"],
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=256,
+            temperature=0,
+        )
+        summary = response.choices[0].message.content or ""
+        return f"[LLM summary of {len(content)} chars]\n{summary.strip()}"
+    except Exception as exc:
+        logger.warning(f"[vLLM] LLM summarization failed ({exc}), falling back to truncation")
+        return f"[truncated {len(content)} chars] {content[:300]}..."
+
+
+async def _compress_messages_history(messages: list, vllm_cfg: dict) -> list:
     """Compress early tool result messages when the conversation history grows too large.
 
-    This mirrors how Claude API manages context server-side: instead of truncating
-    the current tool output (which loses information), we summarize/compress older
-    tool results that are less relevant to the current reasoning step.
+    Uses LLM summarization instead of blind truncation so that key information
+    (numbers, file names, error details) is preserved in compressed messages.
 
     Strategy:
     - Keep system message (index 0) and user message (index 1) intact.
-    - Keep the last KEEP_RECENT_TURNS * 2 messages fully intact (recent context).
-    - For older tool/user messages in the middle, compress their content if they
-      are large, replacing with a short summary line.
+    - Keep the last KEEP_RECENT turns (8 messages) fully intact.
+    - For older tool/user messages in the middle, summarize large content via LLM.
 
     Args:
-        messages: Current messages list (modified in-place copy returned).
+        messages: Current messages list.
         vllm_cfg: vLLM config dict with context_length and max_tokens.
 
     Returns:
@@ -1108,23 +1173,20 @@ def _compress_messages_history(messages: list, vllm_cfg: dict) -> list:
         msg = compressed[i]
         role = msg.get("role", "")
         content = msg.get("content") or ""
-        # Only compress tool results and intermediate user messages (fallback results)
+        # Only compress large tool results and intermediate user messages
         if role in ("tool", "user") and i > 1 and len(content) > 500:
-            # Keep first 200 chars as summary hint
-            summary = content[:200]
+            summary = await _summarize_content_with_llm(content, vllm_cfg)
             compressed[i] = dict(msg)  # copy to avoid mutating original
-            compressed[i]["content"] = (
-                f"[compressed: {len(content)} chars] {summary}..."
-            )
+            compressed[i]["content"] = summary
             logger.debug(
-                f"[vLLM] Compressed message[{i}] role={role}: "
-                f"{len(content)} -> {len(compressed[i]['content'])} chars"
+                f"[vLLM] Summarized message[{i}] role={role}: "
+                f"{len(content)} -> {len(summary)} chars"
             )
 
     new_total = sum(len(str(m.get("content") or "")) for m in compressed)
     if new_total < total_chars:
         logger.info(
-            f"[vLLM] History compressed: {total_chars} -> {new_total} chars "
+            f"[vLLM] History compressed via LLM summarization: {total_chars} -> {new_total} chars "
             f"(budget={budget_chars})"
         )
     return compressed

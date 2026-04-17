@@ -19,7 +19,7 @@ LOG_DIR="$SCRIPT_DIR/results/logs"
 mkdir -p "$LOG_DIR" results
 
 echo "============================================================"
-echo "  EvoSkill Benchmark Runner - Qwen2.5-72B-Instruct (vLLM)"
+echo "  EvoSkill Benchmark Runner - Qwen2.5-32B-Instruct (vLLM)"
 echo "  Model   : $HF_MODEL"
 echo "  Backend : $VLLM_BASE_URL"
 echo "  Concurrent: $MAX_CONCURRENT"
@@ -32,7 +32,7 @@ echo "============================================================"
 echo ""
 echo ">>> [1/4] DABStep benchmark"
 
-rm -f results/dabstep_qwen25_72b.pkl
+rm -f results/dabstep_qwen25_32b.pkl
 
 python3 -W ignore scripts/run_eval_dabstep.py \
     --sdk vllm \
@@ -43,7 +43,7 @@ python3 -W ignore scripts/run_eval_dabstep.py \
     --max-concurrent "$MAX_CONCURRENT" \
     --dataset .dataset/dabstep_dev.csv \
     --data-dir .dataset/DABstep-data/data/context \
-    --output results/dabstep_qwen25_72b.pkl \
+    --output results/dabstep_qwen25_32b.pkl \
     --no-resume \
     2>&1 | grep -v "pynvml\|FutureWarning\|torch_dtype\|Loading checkpoint\|generation flags" \
     | tee "$LOG_DIR/dabstep.log"
@@ -56,7 +56,7 @@ echo ">>> DABStep done."
 echo ""
 echo ">>> [2/4] LiveCodeBench benchmark"
 
-rm -f results/livecodebench_qwen25_72b.pkl
+rm -f results/livecodebench_qwen25_32b.pkl
 
 python3 -W ignore scripts/run_eval_livecodebench.py \
     --sdk vllm \
@@ -65,7 +65,7 @@ python3 -W ignore scripts/run_eval_livecodebench.py \
     --vllm-max-tokens "$MAX_TOKENS" \
     --vllm-context-length "$CONTEXT_LENGTH" \
     --max-concurrent "$MAX_CONCURRENT" \
-    --output results/livecodebench_qwen25_72b.pkl \
+    --output results/livecodebench_qwen25_32b.pkl \
     --no-resume \
     2>&1 | grep -v "pynvml\|FutureWarning\|torch_dtype\|Loading checkpoint\|generation flags" \
     | tee "$LOG_DIR/livecodebench.log"
@@ -93,7 +93,7 @@ print('SEAL-QA downloaded:', len(ds), 'samples')
 fi
 
 if [ -f ".dataset/seal-0.csv" ]; then
-    rm -f results/sealqa_qwen25_72b.pkl
+    rm -f results/sealqa_qwen25_32b.pkl
     python3 -W ignore scripts/run_eval_sealqa.py \
         --sdk vllm \
         --model "$HF_MODEL" \
@@ -101,7 +101,7 @@ if [ -f ".dataset/seal-0.csv" ]; then
         --vllm-max-tokens "$MAX_TOKENS" \
         --vllm-context-length "$CONTEXT_LENGTH" \
         --max-concurrent "$MAX_CONCURRENT" \
-        --output results/sealqa_qwen25_72b.pkl \
+        --output results/sealqa_qwen25_32b.pkl \
         --no-resume \
         2>&1 | grep -v "pynvml\|FutureWarning\|torch_dtype\|Loading checkpoint\|generation flags" \
         | tee "$LOG_DIR/sealqa.log"
@@ -121,7 +121,7 @@ OFFICEQA_DATASET=".dataset/officeqa/officeqa_pro.csv"
 if [ ! -f "$OFFICEQA_DATASET" ]; then
     echo "    [SKIP] OfficeQA dataset not found at $OFFICEQA_DATASET"
 else
-    rm -f results/officeqa_qwen25_72b.pkl
+    rm -f results/officeqa_qwen25_32b.pkl
 
     python3 -W ignore scripts/run_eval.py \
         --sdk vllm \
@@ -131,7 +131,7 @@ else
         --vllm_context_length "$CONTEXT_LENGTH" \
         --max_concurrent "$MAX_CONCURRENT" \
         --dataset_path "$OFFICEQA_DATASET" \
-        --output results/officeqa_qwen25_72b.pkl \
+        --output results/officeqa_qwen25_32b.pkl \
         --resume False \
         2>&1 | grep -v "pynvml\|FutureWarning\|torch_dtype\|Loading checkpoint\|generation flags" \
         | tee "$LOG_DIR/officeqa.log"
