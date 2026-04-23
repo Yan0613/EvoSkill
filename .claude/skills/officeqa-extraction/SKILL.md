@@ -12,7 +12,7 @@ The task prompt lists absolute paths to local parsed `.txt` or `.json` files for
 
 1. **Read the question** — identify the metric, the time period, and any qualifier ("calendar year", "fiscal year", "individual months").
 2. **Identify which bulletin file(s) to read** from the paths in the task prompt.
-3. **Read the file** with the Read tool; scan for the relevant table using the metric keyword.
+3. **Locate the table** — use `grep -n` to find the line number of the relevant section, then read only that range with the Read tool.
 4. **Extract the value** — be precise about row and column.
 5. **Aggregate if needed** — if the question asks for a sum over months, sum each month's value.
 6. **Return the number** in the format found in the source (usually with commas, in millions).
@@ -26,17 +26,24 @@ The task prompt lists absolute paths to local parsed `.txt` or `.json` files for
 
 ## Reading Bulletin Files
 
-```bash
-# Read the file and search for the relevant metric
-# Files are plain text with table-like structure
-# Search for: "national defense", "total expenditures", "public debt"
+Bulletin files are large — never read the whole file. Always locate first, then read a narrow range:
 
-# Use Read tool, then identify the table rows matching the target year/months
-# Tables typically show:
-# Month   | Defense | Other | Total
-# Jan     | 200     | ...
-# Feb     | 210     | ...
+```bash
+# Step 1: find the line number of the relevant table header
+grep -n "national defense\|total expenditures\|public debt" /path/to/bulletin.txt
+
+# Step 2: read only the surrounding range (e.g. lines 120-180)
+# Use the Read tool with offset=120 and limit=60
 ```
+
+Tables typically show:
+```
+Month   | Defense | Other | Total
+Jan     | 200     | ...
+Feb     | 210     | ...
+```
+
+If the first keyword misses, try variants (e.g. "National Defense", "Total", the table number from the question).
 
 ## Answer Format
 
