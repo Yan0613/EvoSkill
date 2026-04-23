@@ -22,7 +22,10 @@ from src.agent_profiles import (
     prompt_generator_options,
     set_sdk,
     set_hf_config,
+<<<<<<< Updated upstream
     set_vllm_config,
+=======
+>>>>>>> Stashed changes
 )
 from src.agent_profiles.skill_generator import get_project_root
 from src.registry import ProgramManager
@@ -86,6 +89,7 @@ class LoopSettings(BaseSettings):
     model: Optional[str] = Field(
         default=None, description="Model for base agent (opus, sonnet, haiku)"
     )
+<<<<<<< Updated upstream
     sdk: Literal["claude", "opencode", "huggingface", "vllm"] = Field(
         default="claude",
         description="SDK to use: 'claude', 'opencode', 'huggingface', or 'vllm'",
@@ -95,12 +99,17 @@ class LoopSettings(BaseSettings):
         description="vLLM server base URL (only used when sdk='vllm')",
     )
     vllm_max_tokens: int = Field(
-        default=8192,
+        default=2048,
         description="Max tokens for vLLM generation (only used when sdk='vllm')",
     )
     vllm_context_length: int = Field(
         default=131072,
         description="vLLM model context window size (default: 131072 for 128K models like Qwen2.5-72B)",
+=======
+    sdk: Literal["claude", "opencode", "huggingface"] = Field(
+        default="claude",
+        description="SDK to use: 'claude', 'opencode', or 'huggingface'",
+>>>>>>> Stashed changes
     )
     hf_model: str = Field(
         default="Qwen/Qwen3-4B",
@@ -175,6 +184,7 @@ async def main(settings: LoopSettings):
             device=settings.hf_device,
             enable_thinking=settings.hf_enable_thinking,
         )
+<<<<<<< Updated upstream
     elif settings.sdk == "vllm":
         set_vllm_config(
             base_url=settings.vllm_base_url,
@@ -182,6 +192,8 @@ async def main(settings: LoopSettings):
             max_tokens=settings.vllm_max_tokens,
             context_length=settings.vllm_context_length,
         )
+=======
+>>>>>>> Stashed changes
 
     data = pd.read_csv(settings.dataset)
 

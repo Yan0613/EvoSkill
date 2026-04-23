@@ -40,7 +40,7 @@ def _score_multi_tolerance(question: str, predicted: str, ground_truth: str) -> 
     weight_total = 0.0
     for tol in TOLERANCE_LEVELS:
         weight = 1.0 / (1.0 + 20.0 * tol)
-        score = score_answer(predicted, ground_truth, tol)
+        score = score_answer(ground_truth, predicted, tol)
         weighted_sum += weight * score
         weight_total += weight
     return weighted_sum / weight_total
@@ -290,13 +290,16 @@ class SelfImprovingLoop:
             failures: list[tuple[AgentTrace, str, str, str]] = []  # (trace, agent_answer, ground_truth, category)
             for trace, (question, answer, category) in zip(traces, test_samples):
                 agent_answer = (
-                    trace.output.final_answer if trace.output else "[PARSE FAILED]"
+                    trace.output.final_answer if trace.output else ""
                 )
-                avg_score = self.scorer(
-                    question,
-                    agent_answer.strip().lower(),
-                    answer.strip().lower(),
-                )
+                if not agent_answer or not answer:
+                    avg_score = 0.0
+                else:
+                    avg_score = self.scorer(
+                        question,
+                        agent_answer.strip().lower(),
+                        answer.strip().lower(),
+                    )
                 status = "[OK]" if avg_score >= 0.8 else "[FAIL]"
                 _log("", f"    {status} [{category}] {question[:40]}...")
                 if avg_score < 0.8:
@@ -442,6 +445,8 @@ class SelfImprovingLoop:
         for result in results:
             if result.trace is None or result.trace.output is None:
                 continue  # Timeout/error/parse failed = 0 score
+            if not result.trace.output.final_answer:
+                continue  # Empty answer = 0 score
             score += self.scorer(
                 result.question,
                 result.trace.output.final_answer,

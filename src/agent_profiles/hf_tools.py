@@ -101,7 +101,12 @@ def _bash(command: str, timeout: int = 30) -> str:
         output = result.stdout
         if result.stderr:
             output += "\n[stderr]\n" + result.stderr
-        return output.strip() or "[No output]"
+        output = output.strip() or "[No output]"
+        _MAX_BASH_CHARS = 80_000
+        if len(output) > _MAX_BASH_CHARS:
+            output = output[:_MAX_BASH_CHARS] + f"
+[... output truncated at {_MAX_BASH_CHARS} chars]"
+        return output
     except subprocess.TimeoutExpired:
         return f"[Error: command timed out after {timeout}s]"
     except Exception as e:
