@@ -152,12 +152,12 @@ def stratified_split(
 
         # Train comes first, then validation
         train_pools[cat] = [
-            (row.question, row.ground_truth)
+            (row.question, row.answer)
             for _, row in cat_data.head(n_train).iterrows()
         ]
         val_data.extend(
             [
-                (row.question, row.ground_truth, cat)
+                (row.question, row.answer, cat)
                 for _, row in cat_data.iloc[n_train : n_train + n_val].iterrows()
             ]
         )
