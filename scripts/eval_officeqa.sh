@@ -82,13 +82,13 @@ if [[ ",${PHASES}," == *",2,"* ]]; then
     log "── [phase2_loop] starting at $(date) ──"
     if "$PYTHON" scripts/run_loop.py \
         --sdk vllm \
-        --vllm-base-url "${VLLM_API_BASE}" \
+        --vllm_base_url "${VLLM_API_BASE}" \
         --model "${MODEL}" \
         --dataset "${LOOP_CSV}" \
         --mode "${MODE}" \
-        --max-iterations "${MAX_ITERATIONS}" \
-        --train-ratio "${TRAIN_RATIO}" \
-        --val-ratio "${VAL_RATIO}" \
+        --max_iterations "${MAX_ITERATIONS}" \
+        --train_ratio "${TRAIN_RATIO}" \
+        --val_ratio "${VAL_RATIO}" \
         --concurrency "${CONCURRENCY}" \
         2>&1 | tee "${BASE_DIR}/phase2_loop.log"; then
         log "── [phase2_loop] DONE at $(date) ──"
