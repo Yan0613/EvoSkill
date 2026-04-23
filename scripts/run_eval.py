@@ -18,10 +18,7 @@ from src.agent_profiles import (
     make_base_agent_options,
     set_sdk,
     set_hf_config,
-<<<<<<< Updated upstream
     set_vllm_config,
-=======
->>>>>>> Stashed changes
 )
 from src.evaluation import score_answer
 from src.evaluation.eval_full import evaluate_full, load_results
@@ -54,15 +51,9 @@ class EvalSettings(BaseSettings):
         default=Path("~/officeqa/officeqa.csv").expanduser(),
         description="Path to OfficeQA dataset CSV",
     )
-<<<<<<< Updated upstream
     sdk: Literal["claude", "opencode", "huggingface", "vllm"] = Field(
         default="claude",
         description="SDK to use: 'claude', 'opencode', 'huggingface', or 'vllm'",
-=======
-    sdk: Literal["claude", "opencode", "huggingface"] = Field(
-        default="claude",
-        description="SDK to use: 'claude', 'opencode', or 'huggingface'",
->>>>>>> Stashed changes
     )
     hf_model: str = Field(
         default="Qwen/Qwen3-4B",
@@ -75,7 +66,6 @@ class EvalSettings(BaseSettings):
     hf_enable_thinking: bool = Field(
         default=False,
         description="Enable thinking mode for HuggingFace models that support it",
-<<<<<<< Updated upstream
     )
     vllm_base_url: str = Field(
         default="http://localhost:8000/v1",
@@ -88,8 +78,6 @@ class EvalSettings(BaseSettings):
     vllm_context_length: int = Field(
         default=131072,
         description="vLLM model context window size",
-=======
->>>>>>> Stashed changes
     )
 
 
@@ -102,7 +90,6 @@ async def main(settings: EvalSettings):
             enable_thinking=settings.hf_enable_thinking,
         )
         print(f"[SDK] HuggingFace backend: {settings.hf_model}")
-<<<<<<< Updated upstream
     elif settings.sdk == "vllm":
         set_vllm_config(
             base_url=settings.vllm_base_url,
@@ -111,8 +98,6 @@ async def main(settings: EvalSettings):
             context_length=settings.vllm_context_length,
         )
         print(f"[SDK] vLLM backend: {settings.vllm_base_url}, model: {settings.model}, context: {settings.vllm_context_length}, max_tokens: {settings.vllm_max_tokens}")
-=======
->>>>>>> Stashed changes
     else:
         print(f"[SDK] {settings.sdk} backend, model: {settings.model}")
 
