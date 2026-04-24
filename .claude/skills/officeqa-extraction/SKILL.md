@@ -12,7 +12,11 @@ The task prompt lists absolute paths to local parsed `.txt` or `.json` files for
 
 1. **Read the question** — identify the metric, the time period, and any qualifier ("calendar year", "fiscal year", "individual months").
 2. **Identify which bulletin file(s) to read** from the paths in the task prompt.
-3. **Read the file** with the Read tool; scan for the relevant table using the metric keyword.
+3. **Extract the relevant table** — the bulletin files are large single-line JSON. Do NOT use Read or Grep directly on them (they will be blocked). Use `Bash` with `python3` to extract matching elements:
+   ```
+   python3 -c "import json; d=json.load(open('/path/to/file.json')); els=d['document']['elements']; [print(i, e['content'][:500]) for i,e in enumerate(els) if 'national defense' in str(e).lower()]"
+   ```
+   This prints only the relevant table rows, not the entire file.
 4. **Extract the value** — be precise about row and column.
 5. **Aggregate if needed** — if the question asks for a sum over months, sum each month's value.
 6. **Return the number** in the format found in the source (usually with commas, in millions).
@@ -26,16 +30,23 @@ The task prompt lists absolute paths to local parsed `.txt` or `.json` files for
 
 ## Reading Bulletin Files
 
-```bash
-# Read the file and search for the relevant metric
-# Files are plain text with table-like structure
-# Search for: "national defense", "total expenditures", "public debt"
+The JSON bulletin files are large (300–900KB) and stored as a single line. **Never use Read or Grep directly** — they will be blocked. Always use `Bash` with `python3`:
 
-# Use Read tool, then identify the table rows matching the target year/months
-# Tables typically show:
-# Month   | Defense | Other | Total
-# Jan     | 200     | ...
-# Feb     | 210     | ...
+```bash
+# Find elements containing a keyword (returns only matching table snippets)
+python3 -c "
+import json
+d = json.load(open('/path/to/bulletin.json'))
+els = d['document']['elements']
+for i, e in enumerate(els):
+    if 'national defense' in str(e).lower():
+        print(f'--- element {i} ---')
+        print(e['content'][:800])
+"
+
+# Tables are HTML strings inside e['content']. Parse month rows like:
+# <tr><td>1940-January</td><td>713</td><td>70</td><td>132</td>...</tr>
+# Columns: Total, Departmental, National defense, Veterans' Admin, ...
 ```
 
 ## Answer Format

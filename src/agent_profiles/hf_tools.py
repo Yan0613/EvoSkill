@@ -46,16 +46,32 @@ def _read_file(path: str, offset: int = 0, limit: int = 0) -> str:
         _ext = os.path.splitext(path)[1].lower()
         _file_size = os.path.getsize(path)
         _is_large = (total_lines > 1000) or (_ext in _LARGE_FILE_EXTS and _file_size > 50 * 1024)
-        if _is_large and _ext in _LARGE_FILE_EXTS and (limit == 0 or limit == -1) and offset == 0:
+        # Single-line large files (e.g. minified JSON): line-based offset/limit is useless —
+        # even limit=1 returns the entire file. Block ALL reads regardless of limit/offset.
+        _is_single_line_large = (_ext in _LARGE_FILE_EXTS and _file_size > 50 * 1024 and total_lines <= 1)
+        if _is_large and _ext in _LARGE_FILE_EXTS and (
+            (limit == 0 or limit == -1) and offset == 0  # default or full-read call
+            or _is_single_line_large  # single-line: limit/offset are meaningless
+        ):
             header = lines[0] if lines else ""
+            if _is_single_line_large:
+                suggestion = (
+                    f"Use Bash+python3 to extract what you need, e.g.:\n"
+                    f"  python3 -c \"import json; d=json.load(open('{path}')); "
+                    f"els=d['document']['elements']; "
+                    f"[print(i,e['content'][:200]) for i,e in enumerate(els) if 'keyword' in str(e).lower()]\""
+                )
+            else:
+                suggestion = (
+                    f"Use Bash with pandas/python to analyze data, e.g.:\n"
+                    f"  python3 -c \"import pandas as pd; df=pd.read_csv('{path}'); "
+                    f"print(df.head()); print(df.columns.tolist())\""
+                )
             return (
-                header.rstrip("\n")[:500]  # cap header preview to 500 chars for single-line JSON
+                header.rstrip("\n")[:500]
                 + f"\n\n[Large file ({total_lines} lines, ~{_file_size / 1024:.1f}KB): "
-                f"only the first 500 chars are shown to prevent context overflow. "
-                f"Do NOT attempt to Read this file with limit=-1. "
-                f"Use Bash with pandas/python to analyze data, e.g.:\n"
-                f"  python3 -c \"import pandas as pd; df=pd.read_csv('{path}'); print(df.head()); "
-                f"print(df.describe()); print(df.columns.tolist())\"]"
+                f"direct Read is blocked to prevent context overflow. "
+                + suggestion + "]"
             )
 
         if offset:
@@ -125,6 +141,15 @@ def _grep(pattern: str, path: str = ".", include: str = "", flags: str = "") -> 
             f"Use Bash+pandas instead, e.g.:\n"
             f"  python3 -c \"import pandas as pd; df=pd.read_csv('{path}'); "
             f"print(df[df['<column>']=='{pattern}'])\"]"
+        )
+    # Also block grep on large single-line JSON (entire file is one line, grep returns it all).
+    if _target_ext == ".json" and os.path.isfile(path) and os.path.getsize(path) > 50 * 1024:
+        return (
+            f"[Grep blocked on '{path}': large single-line JSON — grep would return the entire "
+            f"{os.path.getsize(path)//1024}KB file. Use Bash+python3 instead, e.g.:\n"
+            f"  python3 -c \"import json; d=json.load(open('{path}')); "
+            f"els=d['document']['elements']; "
+            f"[print(i,e['content'][:300]) for i,e in enumerate(els) if '{pattern}' in str(e).lower()]\"]"
         )
     cmd = ["grep", "-rn"]
     if include:
