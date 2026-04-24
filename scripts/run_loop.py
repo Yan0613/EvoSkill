@@ -99,7 +99,7 @@ class LoopSettings(BaseSettings):
         description="Max tokens for vLLM generation (only used when sdk='vllm')",
     )
     vllm_context_length: int = Field(
-        default=131072,
+        default=32768,
         description="vLLM model context window size (default: 131072 for 128K models like Qwen2.5-72B)",
     )
     hf_model: str = Field(

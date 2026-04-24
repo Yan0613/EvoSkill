@@ -76,7 +76,7 @@ class EvalSettings(BaseSettings):
         description="Max tokens for vLLM generation",
     )
     vllm_context_length: int = Field(
-        default=131072,
+        default=32768,
         description="vLLM model context window size",
     )
 
