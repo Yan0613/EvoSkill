@@ -26,12 +26,12 @@ echo "  TP    : $TP_SIZE"
 echo "  GPUs  : $CUDA_VISIBLE_DEVICES"
 echo ""
 
-conda run -p /hkfs/work/workspace/scratch/lmu_eqm3765-misc/conda_envs/evoskill \
-    vllm serve "$MODEL_PATH" \
+/hkfs/work/workspace/scratch/lmu_eqm3765-misc/conda_envs/evoskill/bin/python3.12 \
+    /hkfs/work/workspace/scratch/lmu_eqm3765-misc/conda_envs/evoskill/bin/vllm \
+    serve "$MODEL_PATH" \
     --port "$VLLM_PORT" \
     --tensor-parallel-size "$TP_SIZE" \
     --enable-auto-tool-choice \
     --tool-call-parser gemma4 \
     --max-model-len 32768 \
-    --gpu-memory-utilization 0.90 \
-    2>&1 | tee "$LOG_DIR/vllm_gemma4_server.log"
+    --gpu-memory-utilization 0.90
